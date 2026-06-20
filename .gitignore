@@ -39,3 +39,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+storage/
+
+# local test and scratch files
+test.html
+test.pdf
+/scratch/
+/public/uploads/*
+!.gitkeep
+
+# local IDE config
+.claude/
