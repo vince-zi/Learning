@@ -16,6 +16,17 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ---
 
+# 工具切换交接 — 最先执行
+
+每次打开项目，**第一步**必须读取 `HANDOFF.md`。
+
+如果文件里有未完成的步骤 → 从上次中断的地方继续，不要从头开始。
+如果文件是空的 → 按正常流程从头开始。
+
+禁止跳过这一步。
+
+---
+
 # Mandatory Workflow — 禁止跳过任何步骤
 
 ```
