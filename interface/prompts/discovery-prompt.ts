@@ -11,6 +11,7 @@ export interface DiscoveryCardData {
   summary: string
   tags: string[]
   insight: string           // 用户的原始洞察表述
+  knowledge_node_id?: string
   beforePhotoUrl?: string
   afterPhotoUrl?: string
 }
@@ -36,12 +37,24 @@ ${messagesSummary}
 
 相关摄影领域：${knowledgeNodeName}
 
+请从以下摄影知识节点 ID 中，选择一个最符合本次对话学习内容的节点归类：
+- visual-focus: 视觉重心控制
+- visual-balance: 视觉平衡
+- frame-boundary: 画面框架
+- light-direction: 光线方向
+- exposure-triangle: 曝光三要素
+- color-temperature: 色温控制
+- color-contrast: 色彩对比与搭配
+- time-visualization: 时间视觉化
+- perspective-narrative: 视角与叙事立场
+
 请生成一个 JSON 格式的发现卡片（不要 markdown 代码块，直接输出 JSON）：
 {
   "title": "发现标题（简短、有启发性，如'视觉重量的秘密'）",
   "summary": "2-3句话总结用户在本次会话中通过提问和实践发现的规律。用第二人称'你'。",
   "tags": ["相关的摄影术语标签", "3-5个"],
-  "insight": "用户最核心的洞察——用他们自己的话或接近他们的话"
+  "insight": "用户最核心的洞察——用他们自己的话或接近他们的话",
+  "knowledge_node_id": "从上面选择的一个英文节点 ID，如 'visual-focus'"
 }
 
 要求：
@@ -65,6 +78,7 @@ export function parseDiscoveryResponse(
       summary: data.summary || '',
       tags: data.tags || [],
       insight: data.insight || '',
+      knowledge_node_id: data.knowledge_node_id,
     }
   } catch {
     // 尝试从 markdown 代码块中提取
@@ -77,6 +91,7 @@ export function parseDiscoveryResponse(
           summary: data.summary || '',
           tags: data.tags || [],
           insight: data.insight || '',
+          knowledge_node_id: data.knowledge_node_id,
         }
       } catch {
         return null

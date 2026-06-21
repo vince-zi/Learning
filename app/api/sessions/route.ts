@@ -12,7 +12,7 @@ import type { ModuleType } from '@/core/models/session'
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { userId, theme, module = 'photography' } = body
+        const { userId, theme, module = 'photography', questioningStyle = 'gentle', knowledgeNodeId } = body
 
     const moduleConfig = MODULE_CONFIG[module as ModuleType]
 
@@ -49,12 +49,13 @@ export async function POST(request: Request) {
         user_id: finalUserId,
         status: 'started',
         theme: theme || moduleConfig.defaultTheme,
-        current_knowledge_node_id: moduleConfig.defaultKnowledgeNodeId,
+        current_knowledge_node_id: knowledgeNodeId || moduleConfig.defaultKnowledgeNodeId,
         round_count: 0,
         photo_count: 0,
         discovery_count: 0,
         current_round: 0,
         module: module,
+        questioning_style: questioningStyle,
       })
       .select()
       .single()
@@ -70,9 +71,11 @@ export async function POST(request: Request) {
         id: session.id,
         userId: finalUserId,
         module: module,
-        knowledgeNodeId: moduleConfig.defaultKnowledgeNodeId,
+        knowledgeNodeId: session.current_knowledge_node_id,
+        currentKnowledgeNodeId: session.current_knowledge_node_id,
         status: session.status,
         theme: session.theme,
+        questioningStyle: session.questioning_style,
         startedAt: session.started_at,
       },
     })

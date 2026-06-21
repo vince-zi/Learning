@@ -50,3 +50,6 @@ test.pdf
 
 # local IDE config
 .claude/
+
+# Local Netlify folder
+.netlify

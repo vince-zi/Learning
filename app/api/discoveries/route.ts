@@ -80,6 +80,18 @@ export async function POST(request: Request) {
         : buildManualDiscovery(sessionMessages, knowledgeNodeId || '视觉重心')
     }
 
+    // 验证并选择知识图谱节点 ID
+    const validNodes = isEnglish
+      ? ['self-intro', 'daily-routine', 'likes-dislikes', 'everyday-situations', 'question-asking', 'opinion-expression', 'comparing-discussing', 'storytelling', 'abstract-thinking']
+      : ['visual-focus', 'visual-balance', 'frame-boundary', 'light-direction', 'exposure-triangle', 'color-temperature', 'color-contrast', 'time-visualization', 'perspective-narrative']
+
+    const nodeFromAi = (cardData as any).knowledge_node_id
+    const finalNodeId = (nodeFromAi && validNodes.includes(nodeFromAi))
+      ? nodeFromAi
+      : (knowledgeNodeId && validNodes.includes(knowledgeNodeId))
+      ? knowledgeNodeId
+      : (isEnglish ? 'self-intro' : 'visual-focus')
+
     // 写入数据库
     const discoveryId = uuidv4()
     const { data: discovery, error } = await supabase
@@ -93,7 +105,7 @@ export async function POST(request: Request) {
         photo_urls: [beforePhotoUrl, afterPhotoUrl].filter(Boolean) as string[],
         tags: cardData.tags,
         source_round: 2,
-        knowledge_node_id: knowledgeNodeId || (isEnglish ? 'self-intro' : 'visual-focus'),
+        knowledge_node_id: finalNodeId,
       })
       .select()
       .single()
@@ -243,12 +255,24 @@ User's key insight: ${userInsight || 'Extract from the conversation'}
 
 English skill area: ${knowledgeNodeName}
 
+Classify this discovery into one of the following English knowledge graph nodes (choose the best match based on the conversation):
+- self-intro: 自我介绍与个人信息
+- daily-routine: 日常习惯叙述
+- likes-dislikes: 喜好与感受表达
+- everyday-situations: 日常场景对话应对
+- question-asking: 有效提问与信息获取
+- opinion-expression: 独立观点表达与阐述
+- comparing-discussing: 多维比较与辩证讨论
+- storytelling: 个人故事与时序叙述
+- abstract-thinking: 抽象与假设性思维
+
 Generate a JSON discovery card (no markdown code block, output raw JSON):
 {
   "title": "用中文写一个简短、启发性的发现卡片标题 (例如：'探索过去时态的语感直觉' 或 '发现日常表达中的主被动选择')",
   "summary": "用中文写 2-3 句话，总结用户通过这次对话学到或发现的英语规律。使用 '你' (第二人称)。",
   "tags": ["用中文写相关的英语学习标签 (例如：'过去时', '流畅度', '主动词')", "3-5个标签"],
-  "insight": "用户的核心感悟与发现 — 用中文写出"
+  "insight": "用户的核心感悟与发现 — 用中文写出",
+  "knowledge_node_id": "one of the node IDs listed above, e.g., 'daily-routine'"
 }
 
 Requirements:

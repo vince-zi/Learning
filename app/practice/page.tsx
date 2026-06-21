@@ -40,6 +40,7 @@ function PracticeContent() {
 
   const [questionIndex, setQuestionIndex] = useState(1)
   const [isLoadingHistory, setIsLoadingHistory] = useState(true)
+  const [historyError, setHistoryError] = useState<string | null>(null)
   const [isAssessmentCompleted, setIsAssessmentCompleted] = useState(false)
   const [showChallengeBar, setShowChallengeBar] = useState(false)
   const [showAssessmentBar, setShowAssessmentBar] = useState(false)
@@ -47,6 +48,9 @@ function PracticeContent() {
   const [pendingTaskData, setPendingTaskData] = useState<any>(null)
   const [hintDismissed, setHintDismissed] = useState(false)
   const [showDiscoveryBar, setShowDiscoveryBar] = useState(false)
+  const [dismissedDiscoveryCount, setDismissedDiscoveryCount] = useState<number | null>(null)
+  const [challengeStatus, setChallengeStatus] = useState<'idle' | 'checking' | 'correct' | 'incorrect'>('idle')
+  const [challengeFeedback, setChallengeFeedback] = useState<string | null>(null)
 
   // 加载会话历史
   useEffect(() => {
@@ -54,8 +58,20 @@ function PracticeContent() {
 
     async function loadHistory() {
       try {
+        setHistoryError(null)
         const res = await fetch(`/api/sessions/${sessionId}/messages`)
+        if (!res.ok) {
+          throw new Error(`Server returned ${res.status}: ${res.statusText}`)
+        }
+        const contentType = res.headers.get("content-type")
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error("Server did not return JSON")
+        }
         const data = await res.json()
+        
+        if (!data.session) {
+          throw new Error("Session not found (会话未找到)")
+        }
         
         if (data.session) {
           setSession({
@@ -70,6 +86,9 @@ function PracticeContent() {
             currentRound: data.session.currentRound,
             startedAt: data.session.startedAt,
             completedAt: data.session.completedAt,
+            metadata: {
+              currentKnowledgeNodeId: data.session.currentKnowledgeNodeId,
+            },
           })
           setModule(data.session.module)
           
@@ -156,8 +175,9 @@ function PracticeContent() {
           } catch { /* ignore */ }
           setThinking(false)
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to load history:', err)
+        setHistoryError(err.message || '加载历史会话失败')
       } finally {
         setIsLoadingHistory(false)
       }
@@ -180,7 +200,7 @@ function PracticeContent() {
           sessionId,
           userId: session?.userId,
           module: session?.module || 'photography',
-          knowledgeNodeId: session?.module === 'english' ? 'self-intro' : 'visual-focus',
+          knowledgeNodeId: session?.metadata?.currentKnowledgeNodeId || (session?.module === 'english' ? 'self-intro' : 'visual-focus'),
         }),
       })
       const data = await res.json()
@@ -220,6 +240,29 @@ function PracticeContent() {
       setThinking(false)
     }
   }, [sessionId, session, photos, addDiscovery, setPhase, setThinking, setError, router])
+
+  // 退出并清除临时对话
+  const handleExitSession = useCallback(async (shouldDelete = false) => {
+    if (shouldDelete && sessionId) {
+      try {
+        await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
+        if (session?.module) {
+          localStorage.removeItem(`learniny_active_session_id_${session.module}`)
+          localStorage.removeItem(`learniny_active_session_theme_${session.module}`)
+        }
+      } catch (err) {
+        console.error('Failed to delete temporary session:', err)
+      }
+    }
+    router.push('/progress')
+  }, [sessionId, session, router])
+
+  const handleHeaderBack = useCallback(() => {
+    const confirmExit = window.confirm("确认要返回吗？本次为临时对话，返回后本次对话记录将被清除。")
+    if (confirmExit) {
+      handleExitSession(true)
+    }
+  }, [handleExitSession])
 
   // 发送用户回答
   const handleSendMessage = useCallback(async (content: string) => {
@@ -287,11 +330,12 @@ function PracticeContent() {
       // 推进状态：检测是否应该显示提示栏
       if (data.nextAction === 'issue_task' && !continueChatting) {
         // 记录待处理任务
+        const isEnglish = session?.module === 'english'
         setPendingTaskData({
-          id: `task_${Date.now()}`,
+          id: isEnglish ? (data.challengeTask?.id || `task_${Date.now()}`) : `task_${Date.now()}`,
           sessionId,
           taskType: 'reshoot',
-          instruction: data.message.content,
+          instruction: isEnglish ? (data.challengeTask?.instruction || data.message.content) : data.message.content,
           scaffoldingHints: [],
           status: 'pending',
           createdAt: new Date().toISOString(),
@@ -306,6 +350,15 @@ function PracticeContent() {
         setShowAssessmentBar(true)
       }
 
+      if (data.isResolved) {
+        setTimeout(() => {
+          const confirmExit = window.confirm(`🎉 恭喜！你已100%完美改写了该句子：“${data.resolvedText || ''}”。是否结束本次温习并返回进度页？`)
+          if (confirmExit) {
+            handleExitSession(true)
+          }
+        }, 600)
+      }
+
       if (data.phase && data.nextAction !== 'issue_task') {
         setPhase(data.phase)
       }
@@ -314,7 +367,7 @@ function PracticeContent() {
     } finally {
       setThinking(false)
     }
-  }, [sessionId, isThinking, phase, questionIndex, session, photos, addMessage, setThinking, setError, setPhase, setCurrentTask, continueChatting, setContinueChatting, showChallengeBar, showAssessmentBar, handleGenerateDiscovery])
+  }, [sessionId, isThinking, phase, questionIndex, session, photos, addMessage, setThinking, setError, setPhase, setCurrentTask, continueChatting, setContinueChatting, showChallengeBar, showAssessmentBar, handleGenerateDiscovery, handleExitSession])
 
   // 上传第二轮照片
   const handleReshootUpload = useCallback(async (file: File) => {
@@ -416,6 +469,98 @@ function PracticeContent() {
     // 跳转到发现
     handleGenerateDiscovery()
   }
+
+  // 提交英语挑战回答
+  const handleSubmitChallengeAnswer = useCallback(async (answer: string) => {
+    if (!sessionId || !currentTask) return
+    
+    setChallengeStatus('checking')
+    setChallengeFeedback(null)
+    setError(null)
+    
+    try {
+      const res = await fetch('/api/chat/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          taskId: currentTask.id,
+          instruction: currentTask.instruction,
+          userAnswer: answer,
+        }),
+      })
+      
+      const data = await res.json()
+      if (!data.success) {
+        throw new Error(data.error || 'Evaluation failed')
+      }
+      
+      setChallengeFeedback(data.feedback)
+      if (data.passed) {
+        setChallengeStatus('correct')
+        
+        // 模拟等待 1.5 秒展示“正确反馈”后回到对话中
+        setTimeout(() => {
+          // 乐观地在前端把两条新消息加入列表，保持本地 UI 和数据库同步
+          // 1. 用户答案消息
+          const userMsgId = `temp_user_ans_${Date.now()}`
+          addMessage({
+            id: userMsgId,
+            sessionId,
+            role: 'user',
+            messageType: 'answer',
+            content: answer,
+            createdAt: new Date().toISOString(),
+          })
+          
+          // 2. 助教反馈消息
+          const aiFeedbackId = `temp_ai_fb_${Date.now()}`
+          addMessage({
+            id: aiFeedbackId,
+            sessionId,
+            role: 'assistant',
+            messageType: 'question',
+            content: data.feedback,
+            createdAt: new Date().toISOString(),
+          })
+          
+          // 状态重置
+          clearCurrentTask()
+          setPhase('first_round')
+          setContinueChatting(true)
+          setChallengeStatus('idle')
+          setChallengeFeedback(null)
+        }, 1500)
+      } else {
+        setChallengeStatus('incorrect')
+      }
+    } catch (err: any) {
+      setError(err.message || '评估回答失败，请重试')
+      setChallengeStatus('idle')
+    }
+  }, [sessionId, currentTask, addMessage, clearCurrentTask, setPhase, setContinueChatting, setError])
+
+  // 暂不挑战，继续聊天
+  const handleSkipEnglishChallenge = useCallback(async () => {
+    if (currentTask) {
+      try {
+        await fetch(`/api/tasks/${currentTask.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'skipped' }),
+        })
+      } catch (e) {
+        console.error('Failed to skip task on backend:', e)
+      }
+      
+      clearCurrentTask()
+      analytics.taskSkip('reshoot', sessionId || '')
+    }
+    setPhase('first_round')
+    setContinueChatting(true)
+    setChallengeStatus('idle')
+    setChallengeFeedback(null)
+  }, [sessionId, currentTask, clearCurrentTask, setPhase, setContinueChatting])
 
   // 处理练习挑战选择：「继续聊」
   const handleContinueChatFromChallenge = () => {
@@ -529,8 +674,10 @@ function PracticeContent() {
 
   const isAssessmentSession = session?.theme === 'English Level Placement Assessment'
   const isEnglishModule = session?.module === 'english'
+  const isReviewMode = isEnglishModule && (session?.theme === '全局温习' || session?.theme?.startsWith('温习: '))
+  const isPracticeMode = isEnglishModule && (session?.theme === '全局针对训练' || session?.theme?.startsWith('针对训练: '))
 
-  // 显示提示条：AI 回复达4条以上，且是正常对话状态（没有在测评/任务/完成状态）
+  // 显示提示条：AI 回复达4条以上，且是正常对话状态（没有在测评/任务/完成状态，且不是温习/针对特训模式）
   const currentRoundNum = session?.currentRound || 1
   const aiMsgCount = messages.filter(
     m => m.role === 'assistant' && (m.metadata?.roundNumber === currentRoundNum || !m.metadata?.roundNumber)
@@ -539,6 +686,8 @@ function PracticeContent() {
     continueChatting ||
     (aiMsgCount >= 4 && isEnglishModule)
   ) &&
+  !isReviewMode &&
+  !isPracticeMode &&
   !hintDismissed &&
   !isAssessmentCompleted &&
   phase !== 'reshoot_task' &&
@@ -550,6 +699,8 @@ function PracticeContent() {
   const shouldShowDiscoveryBar = (
     isEnglishModule &&
     !isAssessmentSession &&
+    !isReviewMode &&
+    !isPracticeMode &&
     aiMsgCount >= 6 &&
     !isAssessmentCompleted &&
     phase !== 'discovery' &&
@@ -561,15 +712,46 @@ function PracticeContent() {
   // 当满足条件时自动显示发现栏
   // 如果用户选择了"再聊一会儿"，每3轮后再次提示
   useEffect(() => {
-    if (shouldShowDiscoveryBar && !continueChatting) {
-      setShowDiscoveryBar(true)
+    if (!shouldShowDiscoveryBar) {
+      setShowDiscoveryBar(false)
+      return
     }
-    // 如果用户已选了继续聊，在 9/12/15 轮时再次弹出
-    if (shouldShowDiscoveryBar && continueChatting && aiMsgCount >= 9 && aiMsgCount % 3 === 0) {
-      setContinueChatting(false)
-      setShowDiscoveryBar(true)
+
+    const isMilestone = aiMsgCount === 6 || (aiMsgCount >= 9 && aiMsgCount % 3 === 0)
+    if (isMilestone) {
+      if (dismissedDiscoveryCount === null || aiMsgCount > dismissedDiscoveryCount) {
+        setShowDiscoveryBar(true)
+      } else {
+        setShowDiscoveryBar(false)
+      }
+    } else {
+      setShowDiscoveryBar(false)
     }
-  }, [shouldShowDiscoveryBar, continueChatting, aiMsgCount, setContinueChatting])
+  }, [shouldShowDiscoveryBar, aiMsgCount, dismissedDiscoveryCount])
+
+  if (historyError) {
+    return (
+      <div className="flex flex-col flex-1 items-center justify-center p-6 text-center min-h-[50vh]">
+        <div className="p-4 rounded-full bg-red-500/10 text-red-500 mb-4 text-2xl animate-bounce">
+          ⚠️
+        </div>
+        <h3 className="text-base font-semibold text-zinc-800 dark:text-zinc-200 mb-2">无法加载历史会话</h3>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6 max-w-sm leading-relaxed">
+          {historyError.includes("404") || historyError.includes("JSON")
+            ? "该会话记录在服务器上未找到，或已过期被清理。建议您返回首页重新开启与 AI 的启发式对话。"
+            : `系统错误: ${historyError}`}
+        </p>
+        <div className="flex gap-4">
+          <a
+            href="/"
+            className="px-5 py-2.5 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 rounded-xl transition shadow-sm"
+          >
+            返回首页
+          </a>
+        </div>
+      </div>
+    )
+  }
 
   if (isLoadingHistory) {
     return (
@@ -598,9 +780,19 @@ function PracticeContent() {
             </h2>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold tracking-wide shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          {session?.module === 'english' ? '聊天中' : '陪伴中'}
+        <div className="flex items-center gap-2 shrink-0">
+          {(isReviewMode || isPracticeMode) && (
+            <button
+              onClick={handleHeaderBack}
+              className="px-2.5 py-1 rounded-full bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold tracking-wide active:scale-95 transition-all cursor-pointer"
+            >
+              返回进度页 ↩
+            </button>
+          )}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold tracking-wide">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            {session?.module === 'english' ? '聊天中' : '陪伴中'}
+          </div>
         </div>
       </div>
 
@@ -649,18 +841,53 @@ function PracticeContent() {
                 {currentTask.instruction}
               </p>
             </Card>
+
+            {challengeFeedback && (
+              <div className={`p-3 rounded-xl border text-xs leading-relaxed ${
+                challengeStatus === 'correct'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-800 dark:text-emerald-400'
+                  : 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/20 dark:border-amber-800 dark:text-amber-400'
+              }`}>
+                <p className="font-bold flex items-center gap-1.5 mb-1">
+                  {challengeStatus === 'correct' ? '🎉 回答正确！' : '💡 反馈建议：'}
+                </p>
+                <p className="whitespace-pre-wrap">{challengeFeedback}</p>
+                {challengeStatus === 'correct' && (
+                  <p className="text-[10px] text-emerald-600/80 mt-1.5 animate-pulse">正在返回对话...</p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-3">
               <AnswerInput
-                onSubmit={handleSendMessage}
-                isLoading={isThinking}
-                placeholder="用英语写下你的回答..."
+                onSubmit={handleSubmitChallengeAnswer}
+                isLoading={challengeStatus === 'checking' || challengeStatus === 'correct'}
+                placeholder={
+                  challengeStatus === 'checking'
+                    ? 'AI 正在评估你的回答...'
+                    : challengeStatus === 'correct'
+                    ? '正确，即将返回对话...'
+                    : '用英语写下你的回答...'
+                }
               />
               <div className="flex gap-3">
-                <Button variant="ghost" size="sm" onClick={handleSkipTask} className="flex-1 text-xs">
-                  跳过，查看我的发现
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={handleSkipEnglishChallenge} 
+                  disabled={challengeStatus === 'checking' || challengeStatus === 'correct'}
+                  className="flex-1 text-xs"
+                >
+                  暂不挑战，继续聊天 💬
                 </Button>
-                <Button variant="primary" size="sm" onClick={handleGenerateDiscovery} className="flex-1 text-xs bg-blue-600 hover:bg-blue-700">
-                  生成我的发现
+                <Button 
+                  variant="primary" 
+                  size="sm" 
+                  onClick={handleGenerateDiscovery} 
+                  disabled={challengeStatus === 'checking' || challengeStatus === 'correct'}
+                  className="flex-1 text-xs bg-blue-600 hover:bg-blue-700"
+                >
+                  生成我的发现 ✨
                 </Button>
               </div>
             </div>
@@ -811,6 +1038,7 @@ function PracticeContent() {
                 <button
                   onClick={() => {
                     setShowDiscoveryBar(false)
+                    setDismissedDiscoveryCount(aiMsgCount)
                     setContinueChatting(true)
                   }}
                   className="flex-1 py-2.5 rounded-xl border border-blue-300/60 dark:border-blue-700/60 bg-white/80 dark:bg-zinc-800/80 text-blue-700 dark:text-blue-300 text-xs font-semibold hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-all active:scale-[0.98]"

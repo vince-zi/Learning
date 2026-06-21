@@ -45,6 +45,8 @@ export async function GET(
       currentRound: session.current_round,
       startedAt: session.started_at,
       completedAt: session.completed_at,
+      questioningStyle: session.questioning_style,
+      currentKnowledgeNodeId: session.current_knowledge_node_id,
     } : null
 
     return NextResponse.json({

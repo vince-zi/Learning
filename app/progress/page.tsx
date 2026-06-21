@@ -7,13 +7,15 @@ import { Button } from '@/components/ui/Button'
 import { useSessionStore } from '@/store/session-store'
 import { analytics } from '@/lib/analytics/tracker'
 import { supabase } from '@/lib/db/supabase-client'
+import { englishKnowledgeGraph } from '@/core/knowledge-graph/english-graph'
+import { photographyKnowledgeGraph } from '@/core/knowledge-graph/photography-graph'
 
 interface ProgressStats {
   totalSessions: number
   totalPhotos: number
   totalDiscoveries: number
   streakDays: number
-  skillsUnlocked: { name: string; status: string }[]
+  skillsUnlocked: { id: string; name: string; status: string }[]
 }
 
 export default function ProgressPage() {
@@ -25,19 +27,27 @@ export default function ProgressPage() {
   const isEnglish = module === 'english'
 
   const photoSkills = [
-    { name: '视觉重心控制', status: 'in_progress' },
-    { name: '视觉平衡', status: 'locked' },
-    { name: '画面框架', status: 'locked' },
-    { name: '光线方向', status: 'locked' },
-    { name: '曝光三要素', status: 'locked' },
+    { id: 'visual-focus', name: '视觉重心与注意力引导', status: 'in_progress' },
+    { id: 'visual-balance', name: '视觉平衡与重量', status: 'locked' },
+    { id: 'frame-boundary', name: '画面框架与边界', status: 'locked' },
+    { id: 'light-direction', name: '光线的方向与质感', status: 'locked' },
+    { id: 'exposure-triangle', name: '曝光三要素的发现', status: 'locked' },
+    { id: 'color-temperature', name: '色彩的冷暖与情绪', status: 'locked' },
+    { id: 'color-contrast', name: '色彩对比与和谐', status: 'locked' },
+    { id: 'time-visualization', name: '照片中的时间感', status: 'locked' },
+    { id: 'perspective-narrative', name: '视角与叙事立场', status: 'locked' },
   ]
 
   const englishSkills = [
-    { name: '自我介绍与表达', status: 'in_progress' },
-    { name: '日常习惯叙述', status: 'locked' },
-    { name: '场景对话应对', status: 'locked' },
-    { name: '观点表达与论证', status: 'locked' },
-    { name: '故事讲述', status: 'locked' },
+    { id: 'self-intro', name: '自我介绍与个人信息', status: 'in_progress' },
+    { id: 'daily-routine', name: '日常生活与习惯表达', status: 'locked' },
+    { id: 'likes-dislikes', name: '喜好与感受表达', status: 'locked' },
+    { id: 'everyday-situations', name: '日常场景应对', status: 'locked' },
+    { id: 'question-asking', name: '提问的艺术', status: 'locked' },
+    { id: 'opinion-expression', name: '观点表达与论证', status: 'locked' },
+    { id: 'comparing-discussing', name: '比较与讨论', status: 'locked' },
+    { id: 'storytelling', name: '叙事与故事讲述', status: 'locked' },
+    { id: 'abstract-thinking', name: '抽象话题与假设思维', status: 'locked' },
   ]
 
   const [stats, setStats] = useState<ProgressStats>({
@@ -101,7 +111,7 @@ export default function ProgressPage() {
           // 获取相关的 session 和 photo 统计数
           const { data: sessionsData } = await supabase
             .from('learning_sessions')
-            .select('id')
+            .select('started_at')
             .eq('user_id', userId)
             .eq('module', module)
 
@@ -116,16 +126,42 @@ export default function ProgressPage() {
 
           const totalSessions = sessionsData?.length || 0
           const totalDiscoveries = discoveriesData.length
-          const streakDays = Math.max(1, Math.min(totalSessions, 7)) // 简单估算
+
+          // 真实天数计算：从 started_at 提取 YYYY-MM-DD，进行 Set 去重计数
+          const uniqueDays = new Set(
+            (sessionsData || [])
+              .map(s => s.started_at)
+              .filter(Boolean)
+              .map(d => d.split('T')[0])
+          )
+          const streakDays = uniqueDays.size || 1
 
           // 动态计算技能树解锁情况（摄影/英语）
-          const skillNames = isEnglish
-            ? ['自我介绍与表达', '日常习惯叙述', '场景对话应对', '观点表达与论证', '故事讲述']
-            : ['视觉重心控制', '视觉平衡', '画面框架', '光线方向', '曝光三要素']
-          const skillsList = skillNames.map((name, i) => ({
-            name,
-            status: totalDiscoveries >= i + 1 ? 'mastered' : totalDiscoveries === i ? 'in_progress' : 'locked',
-          })) as ProgressStats['skillsUnlocked']
+          const graph = isEnglish ? englishKnowledgeGraph : photographyKnowledgeGraph
+          const graphNodes = Array.from(graph.nodes.values())
+          
+          const masteredNodeIds = new Set(
+            (discoveriesData || [])
+              .map(d => d.knowledge_node_id)
+              .filter(Boolean)
+          )
+          
+          const skillsList = graphNodes.map(node => {
+            let status = 'locked'
+            if (masteredNodeIds.has(node.id)) {
+              status = 'mastered'
+            } else if (
+              node.prerequisiteIds.length === 0 ||
+              node.prerequisiteIds.every(reqId => masteredNodeIds.has(reqId))
+            ) {
+              status = 'in_progress'
+            }
+            return {
+              id: node.id,
+              name: node.name,
+              status,
+            }
+          }) as ProgressStats['skillsUnlocked']
 
           const newStats: ProgressStats = {
             totalSessions,
@@ -149,6 +185,171 @@ export default function ProgressPage() {
   const handleNewSession = () => {
     useSessionStore.getState().resetSession()
     router.push('/')
+  }
+
+  // 开始针对性技能练习
+  const handleStartPractice = async (nodeId: string, nodeName: string, forceTargeted = false) => {
+    const userId = localStorage.getItem('learniny_user_id')
+    if (!userId) return
+
+    try {
+      // 1. 重置客户端会话状态 (清空旧消息、照片缓存等)
+      useSessionStore.getState().resetSession()
+
+      const theme = (isEnglish && forceTargeted)
+        ? `针对训练: ${nodeName}`
+        : nodeName
+
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, theme, module, knowledgeNodeId: nodeId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        analytics.sessionStart(data.session.id)
+        useSessionStore.getState().setSession({
+          id: data.session.id,
+          userId,
+          module,
+          status: 'in_progress',
+          theme,
+          roundCount: 0,
+          photoCount: 0,
+          discoveryCount: 0,
+          currentRound: 1,
+          startedAt: new Date().toISOString(),
+          metadata: {
+            currentKnowledgeNodeId: nodeId,
+          },
+        })
+        useSessionStore.getState().setPhase('first_round')
+        router.push(`/practice?session=${data.session.id}`)
+      }
+    } catch (err) {
+      console.error('Failed to start targeted practice:', err)
+    }
+  }
+
+  // 开始温习会话 (仅英语模块支持)
+  const handleStartReview = async (nodeId: string, nodeName: string) => {
+    const userId = localStorage.getItem('learniny_user_id')
+    if (!userId) return
+
+    try {
+      // 1. 重置客户端会话状态 (清空旧消息、照片缓存等)
+      useSessionStore.getState().resetSession()
+      
+      const theme = `温习: ${nodeName}`
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, theme, module, knowledgeNodeId: nodeId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        analytics.sessionStart(data.session.id)
+        useSessionStore.getState().setSession({
+          id: data.session.id,
+          userId,
+          module,
+          status: 'in_progress',
+          theme,
+          roundCount: 0,
+          photoCount: 0,
+          discoveryCount: 0,
+          currentRound: 1,
+          startedAt: new Date().toISOString(),
+          metadata: {
+            currentKnowledgeNodeId: nodeId,
+          },
+        })
+        useSessionStore.getState().setPhase('first_round')
+        router.push(`/practice?session=${data.session.id}`)
+      }
+    } catch (err) {
+      console.error('Failed to start review:', err)
+    }
+  }
+
+  // 开始全局温习会话 (从所有历史错句中复习)
+  const handleStartGlobalReview = async () => {
+    const userId = localStorage.getItem('learniny_user_id')
+    if (!userId) return
+
+    try {
+      useSessionStore.getState().resetSession()
+      
+      const theme = '全局温习'
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, theme, module, knowledgeNodeId: 'global-review' }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        analytics.sessionStart(data.session.id)
+        useSessionStore.getState().setSession({
+          id: data.session.id,
+          userId,
+          module,
+          status: 'in_progress',
+          theme,
+          roundCount: 0,
+          photoCount: 0,
+          discoveryCount: 0,
+          currentRound: 1,
+          startedAt: new Date().toISOString(),
+          metadata: {
+            currentKnowledgeNodeId: 'global-review',
+          },
+        })
+        useSessionStore.getState().setPhase('first_round')
+        router.push(`/practice?session=${data.session.id}`)
+      }
+    } catch (err) {
+      console.error('Failed to start global review:', err)
+    }
+  }
+
+  // 开始全局针对特训会话 (分析全部历史错句盲区并进行专项特训)
+  const handleStartGlobalPractice = async () => {
+    const userId = localStorage.getItem('learniny_user_id')
+    if (!userId) return
+
+    try {
+      useSessionStore.getState().resetSession()
+      
+      const theme = '全局针对训练'
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, theme, module, knowledgeNodeId: 'global-practice' }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        analytics.sessionStart(data.session.id)
+        useSessionStore.getState().setSession({
+          id: data.session.id,
+          userId,
+          module,
+          status: 'in_progress',
+          theme,
+          roundCount: 0,
+          photoCount: 0,
+          discoveryCount: 0,
+          currentRound: 1,
+          startedAt: new Date().toISOString(),
+          metadata: {
+            currentKnowledgeNodeId: 'global-practice',
+          },
+        })
+        useSessionStore.getState().setPhase('first_round')
+        router.push(`/practice?session=${data.session.id}`)
+      }
+    } catch (err) {
+      console.error('Failed to start global practice:', err)
+    }
   }
 
   // 开始定级测评会话
@@ -326,6 +527,54 @@ export default function ProgressPage() {
         </Card>
       </div>
 
+      {/* 全局复习与专项训练控制台 */}
+      {isEnglish && (
+        <div className="mb-8 animate-fade-in" style={{ animationDelay: '80ms' }}>
+          <h2 className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-4">
+            🔄 全局复习与专项强化
+          </h2>
+          <div className="grid grid-cols-2 gap-4">
+            {/* 全局温习卡片 */}
+            <Card className="flex flex-col justify-between p-4 border border-zinc-200 dark:border-zinc-800 bg-white/40 dark:bg-zinc-950/20 hover:shadow-md transition-all duration-300">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-lg">🔄</span>
+                  <h3 className="text-xs font-bold text-zinc-850 dark:text-zinc-200">全局对话温习</h3>
+                </div>
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-relaxed mb-4">
+                  扮演“过去的你”，提取你以往所有会话的历史错句，由现在的你进行更完美的重构与演练。
+                </p>
+              </div>
+              <Button
+                onClick={handleStartGlobalReview}
+                className="w-full py-1.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:brightness-105 text-[10px] font-bold text-white rounded-lg transition-all"
+              >
+                开始全局温习
+              </Button>
+            </Card>
+
+            {/* 语法与词汇针对特训卡片 */}
+            <Card className="flex flex-col justify-between p-4 border border-zinc-200 dark:border-zinc-800 bg-white/40 dark:bg-zinc-950/20 hover:shadow-md transition-all duration-300">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-lg">🎯</span>
+                  <h3 className="text-xs font-bold text-zinc-850 dark:text-zinc-200">语法与词汇特训</h3>
+                </div>
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-relaxed mb-4">
+                  汇总分析你以往所有会话中最高频的错误模式，由 AI 主动开展翻译或改写等针对性专项特训。
+                </p>
+              </div>
+              <Button
+                onClick={handleStartGlobalPractice}
+                className="w-full py-1.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:brightness-105 text-[10px] font-bold text-white rounded-lg transition-all"
+              >
+                开始专项针对训练
+              </Button>
+            </Card>
+          </div>
+        </div>
+      )}
+
       {/* 技能解锁 — 垂直时间轴路线图 */}
       <div className="mb-8 animate-fade-in" style={{ animationDelay: '100ms' }}>
         <h2 className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-6">
@@ -337,6 +586,7 @@ export default function ProgressPage() {
           {stats.skillsUnlocked.map((skill, idx) => {
             const isMastered = skill.status === 'mastered'
             const isInProgress = skill.status === 'in_progress'
+            const isLocked = skill.status === 'locked'
             
             return (
               <div key={skill.name} className="relative group animate-fade-in" style={{ animationDelay: `${120 + idx * 40}ms` }}>
@@ -365,7 +615,7 @@ export default function ProgressPage() {
                 }`}>
                   <div className="flex items-center justify-between">
                     <span className={`text-xs font-bold ${
-                      skill.status === 'locked' ? 'text-zinc-400 dark:text-zinc-650' : 'text-zinc-800 dark:text-zinc-200'
+                      isLocked ? 'text-zinc-400 dark:text-zinc-650' : 'text-zinc-800 dark:text-zinc-200'
                     }`}>
                       {skill.name}
                     </span>
@@ -381,6 +631,39 @@ export default function ProgressPage() {
                       {isMastered ? '已掌握' : isInProgress ? '探索中' : '待激活'}
                     </span>
                   </div>
+
+                  {/* 操作按钮区 */}
+                  {!isLocked && (
+                    <div className="flex gap-2 mt-3 pt-2.5 border-t border-dashed border-zinc-200/50 dark:border-zinc-800/40">
+                      {isEnglish ? (
+                        isMastered ? (
+                          <button
+                            onClick={() => handleStartPractice(skill.id, skill.name)}
+                            className="w-full py-1.5 px-3 rounded-lg text-[10px] font-bold tracking-wider flex items-center justify-center gap-1.5 active:scale-95 transition-all border border-emerald-500/20 text-emerald-600 hover:bg-emerald-500/5 dark:border-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/5"
+                          >
+                            <span>再次温习</span>
+                            <span>🔄</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleStartPractice(skill.id, skill.name)}
+                            className="w-full py-1.5 px-3 rounded-lg text-[10px] font-bold tracking-wider flex items-center justify-center gap-1.5 active:scale-95 transition-all bg-blue-500 text-white hover:brightness-105 shadow-sm shadow-blue-500/10"
+                          >
+                            <span>开始针对性练习</span>
+                            <span>🎯</span>
+                          </button>
+                        )
+                      ) : (
+                        <button
+                          onClick={() => handleStartPractice(skill.id, skill.name)}
+                          className="w-full py-1.5 px-3 rounded-lg text-[10px] font-bold tracking-wider flex items-center justify-center gap-1.5 active:scale-95 transition-all bg-amber-500 text-white hover:brightness-105 shadow-sm shadow-amber-500/10"
+                        >
+                          <span>开始练习</span>
+                          <span>🎯</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )

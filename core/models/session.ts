@@ -131,6 +131,7 @@ export interface LearningSession {
   currentRound: number
   startedAt: string
   completedAt?: string
+  questioningStyle?: 'gentle' | 'sharp' | 'action'
   metadata?: SessionMetadata
 }
 

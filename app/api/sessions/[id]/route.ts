@@ -53,12 +53,40 @@ export async function PATCH(
         currentRound: session.current_round,
         startedAt: session.started_at,
         completedAt: session.completed_at,
+        questioningStyle: session.questioning_style,
       },
     })
   } catch (error: any) {
     console.error('[Session PATCH API] Error:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to update session' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: sessionId } = await params
+    const supabase = getServerClient()
+    const { error } = await supabase
+      .from('learning_sessions')
+      .delete()
+      .eq('id', sessionId)
+
+    if (error) {
+      console.error('Failed to delete session:', error.message)
+      return NextResponse.json({ error: 'Failed to delete session', detail: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    console.error('[Session DELETE API] Error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to delete session' },
       { status: 500 }
     )
   }
