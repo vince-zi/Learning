@@ -16,7 +16,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ---
 
-# 工具切换交接 — 最先执行
+# 工具切换交接 — 最先执行，最后也要执行
+
+## 打开项目时（第一步）
 
 每次打开项目，**第一步**必须读取 `HANDOFF.md`。
 
@@ -24,6 +26,19 @@ This version has breaking changes — APIs, conventions, and file structure may 
 如果文件是空的 → 按正常流程从头开始。
 
 禁止跳过这一步。
+
+## 工作结束时（最后一步）
+
+每完成一个步骤，**立即**更新 HANDOFF.md：
+- 勾选已完成的步骤 `[x]`
+- 填写执行结果（commit hash、变更说明）
+- 更新"下一步要做什么"
+
+标记切换记录：
+- 如果用户说"切回 Antigravity" → 填写切换记录表，确保 Antigravity 能精确接上
+- 如果只是暂停 → 更新当前步骤和下一步
+
+禁止让 HANDOFF.md 落后于实际进度。
 
 ---
 
