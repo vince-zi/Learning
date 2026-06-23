@@ -23,6 +23,10 @@ export default function ProgressPage() {
   const { discoveries, photos, module } = useSessionStore()
   const [dbDiscoveries, setDbDiscoveries] = useState<any[]>([])
   const [englishProfile, setEnglishProfile] = useState<any>(null)
+  const [errorRecords, setErrorRecords] = useState<any[]>([])
+  const [showConqueredVault, setShowConqueredVault] = useState(false)
+  const [expandedErrorId, setExpandedErrorId] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   const isEnglish = module === 'english'
 
@@ -76,16 +80,31 @@ export default function ProgressPage() {
   }
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search)
+      const queryModule = searchParams.get('module')
+      if (queryModule === 'english' || queryModule === 'photography') {
+        if (queryModule !== module) {
+          useSessionStore.getState().setModule(queryModule)
+          return
+        }
+      }
+    }
+
     analytics.pageView('progress')
     // 1. 先从 LocalStorage 载入缓存的统计数据（实现无延迟加载）
     loadStats()
 
     const userId = localStorage.getItem('learniny_user_id')
-    if (!userId) return
+    if (!userId) {
+      setIsLoading(false)
+      return
+    }
 
     async function syncData() {
+      setIsLoading(true)
       try {
-        // 获取该用户在当前 module 下的 discoveries
+        // 获取该用户在当前 module 下 of discoveries
         const { data: discoveriesData, error: discError } = await supabase
           .from('discoveries')
           .select('*, learning_sessions!inner(module)')
@@ -98,7 +117,7 @@ export default function ProgressPage() {
         if (discoveriesData) {
           setDbDiscoveries(discoveriesData)
 
-          // 英语模块特有：获取英语学习者画像
+          // 英语模块特有：获取英语学习者画像与错题本记录
           if (isEnglish) {
             const { data: profile } = await supabase
               .from('english_learner_profiles')
@@ -106,6 +125,13 @@ export default function ProgressPage() {
               .eq('user_id', userId)
               .maybeSingle()
             setEnglishProfile(profile)
+
+            const { data: errRecords } = await supabase
+              .from('error_records')
+              .select('*')
+              .eq('user_id', userId)
+              .order('created_at', { ascending: false })
+            setErrorRecords(errRecords || [])
           }
           
           // 获取相关的 session 和 photo 统计数
@@ -176,6 +202,8 @@ export default function ProgressPage() {
         }
       } catch (err) {
         console.error('[Progress Sync Error]:', err)
+      } finally {
+        setIsLoading(false)
       }
     }
 
@@ -397,21 +425,71 @@ export default function ProgressPage() {
       }`} />
 
       {/* 页面标题 */}
-      <div className="mb-8 animate-fade-in">
+      <div className="mb-6 animate-fade-in">
         <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 mb-1.5">
-          {isEnglish ? '我的英语知识库' : '我的摄影知识库'}
+          我的学习进度
         </h1>
         <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-          {isEnglish
-            ? '这里记录了你通过真实英语对话，自己发现和积累的语言规律与表达方式。'
-            : '这里记录了你通过提问和对比实践，探索并解锁的各种摄影核心直觉与规律。'}
+          在这里，你可以查看你所探索解锁的各项技能进度，以及温习巩固薄弱直觉。
         </p>
+      </div>
+
+      {/* 模块选择 Tab 栏 */}
+      <div className="flex gap-2.5 p-1 bg-zinc-100 dark:bg-zinc-900 rounded-xl mb-6">
+        <button
+          onClick={() => {
+            useSessionStore.getState().setModule('photography')
+            router.replace('/progress?module=photography')
+          }}
+          className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg transition-all duration-300 ${
+            !isEnglish
+              ? 'bg-white dark:bg-zinc-800 text-amber-600 shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+          }`}
+        >
+          📸 摄影知识库
+        </button>
+        <button
+          onClick={() => {
+            useSessionStore.getState().setModule('english')
+            router.replace('/progress?module=english')
+          }}
+          className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg transition-all duration-300 ${
+            isEnglish
+              ? 'bg-white dark:bg-zinc-800 text-blue-600 shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+          }`}
+        >
+          🗣️ 英语知识库
+        </button>
       </div>
 
       {/* 英语学习者画像卡片 */}
       {isEnglish && (
         <div className="mb-8 animate-fade-in" style={{ animationDelay: '80ms' }}>
-          {englishProfile ? (
+          {isLoading ? (
+            /* 优雅的加载骨架屏 */
+            <Card className="p-6 border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/20 shadow-sm">
+              <div className="animate-pulse space-y-4">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-2">
+                    <div className="h-4 w-32 bg-zinc-200 dark:bg-zinc-800 rounded" />
+                    <div className="h-3 w-48 bg-zinc-200 dark:bg-zinc-800 rounded" />
+                  </div>
+                  <div className="h-10 w-16 bg-zinc-200 dark:bg-zinc-800 rounded-xl" />
+                </div>
+                <div className="h-px bg-zinc-150 dark:bg-zinc-800" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="h-10 bg-zinc-200 dark:bg-zinc-800 rounded" />
+                  <div className="h-10 bg-zinc-200 dark:bg-zinc-800 rounded" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-3 w-full bg-zinc-200 dark:bg-zinc-800 rounded" />
+                  <div className="h-3 w-5/6 bg-zinc-200 dark:bg-zinc-800 rounded" />
+                </div>
+              </div>
+            </Card>
+          ) : englishProfile ? (
             <Card className="relative overflow-hidden border-2 border-blue-500/20 bg-gradient-to-br from-blue-500/[0.04] via-blue-500/[0.01] to-transparent p-6 shadow-md dark:border-blue-900/40">
               <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-blue-500/[0.06] to-transparent -z-10 rounded-full blur-xl pointer-events-none" />
               
@@ -455,7 +533,7 @@ export default function ProgressPage() {
                     </h3>
                     <ul className="space-y-1.5 pl-3 border-l border-emerald-500/10">
                       {englishProfile.strengths.map((str: string, idx: number) => (
-                        <li key={idx} className="text-xs text-zinc-650 dark:text-zinc-400 leading-relaxed font-medium">
+                        <li key={idx} className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed font-medium">
                           {str}
                         </li>
                       ))}
@@ -470,7 +548,7 @@ export default function ProgressPage() {
                     </h3>
                     <ul className="space-y-1.5 pl-3 border-l border-blue-500/10">
                       {englishProfile.weaknesses.map((weak: string, idx: number) => (
-                        <li key={idx} className="text-xs text-zinc-650 dark:text-zinc-400 leading-relaxed font-medium">
+                        <li key={idx} className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed font-medium">
                           {weak}
                         </li>
                       ))}
@@ -539,7 +617,7 @@ export default function ProgressPage() {
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-lg">🔄</span>
-                  <h3 className="text-xs font-bold text-zinc-850 dark:text-zinc-200">全局对话温习</h3>
+                  <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">全局对话温习</h3>
                 </div>
                 <p className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-relaxed mb-4">
                   扮演“过去的你”，提取你以往所有会话的历史错句，由现在的你进行更完美的重构与演练。
@@ -558,7 +636,7 @@ export default function ProgressPage() {
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-lg">🎯</span>
-                  <h3 className="text-xs font-bold text-zinc-850 dark:text-zinc-200">语法与词汇特训</h3>
+                  <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">语法与词汇特训</h3>
                 </div>
                 <p className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-relaxed mb-4">
                   汇总分析你以往所有会话中最高频的错误模式，由 AI 主动开展翻译或改写等针对性专项特训。
@@ -570,6 +648,156 @@ export default function ProgressPage() {
               >
                 开始专项针对训练
               </Button>
+            </Card>
+          </div>
+
+          {/* 我的英语直觉错题本 */}
+          <div className="mt-8">
+            <h2 className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-4 flex items-center gap-1.5">
+              <span>📓 我的英语直觉错题本</span>
+              {errorRecords.length > 0 && (
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-extrabold leading-none">
+                  {errorRecords.filter(e => e.noted_by_user).length}/{errorRecords.length} 已消灭
+                </span>
+              )}
+            </h2>
+
+            <Card className="p-5 border border-zinc-200 dark:border-zinc-800 bg-white/40 dark:bg-zinc-950/20 shadow-sm space-y-4">
+              {/* 头部总结 */}
+              <div className="flex items-center justify-between pb-3.5 border-b border-zinc-200/50 dark:border-zinc-900">
+                <div className="space-y-0.5">
+                  <p className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300">防线加固进度</p>
+                  <p className="text-[9px] text-zinc-400 dark:text-zinc-500">通过“原句重构”与“迁移应用”双重验证才算彻底消灭错误</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-base">🏆</span>
+                  <span className="text-xs font-black text-zinc-800 dark:text-zinc-200">
+                    {errorRecords.filter(e => e.noted_by_user).length}
+                  </span>
+                  <span className="text-[9px] text-zinc-400 font-medium">项攻克</span>
+                </div>
+              </div>
+
+              {/* 待攻克错题列表 */}
+              {errorRecords.filter(e => !e.noted_by_user).length > 0 ? (
+                <div className="space-y-3">
+                  {errorRecords.filter(e => !e.noted_by_user).map((err) => {
+                    const pattern = err.error_pattern || ''
+                    const stage1Passed = pattern.endsWith(':stage-1') || pattern.endsWith(':stage-2')
+                    const stage2Passed = pattern.endsWith(':stage-2') || err.noted_by_user
+
+                    const isExpanded = expandedErrorId === err.id
+                    return (
+                      <div
+                        key={err.id}
+                        onClick={() => setExpandedErrorId(isExpanded ? null : err.id)}
+                        className="p-3 rounded-xl border border-zinc-200/60 dark:border-zinc-900 bg-zinc-50/30 dark:bg-zinc-900/10 space-y-2.5 transition-all hover:border-zinc-300 dark:hover:border-zinc-800 cursor-pointer select-none active:scale-[0.99]"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 leading-snug break-all">
+                            “{err.original_text}”
+                          </p>
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-500 shrink-0">
+                            {getFriendlyErrorName(err.error_type)}
+                          </span>
+                        </div>
+
+                        {/* 双关卡指示条 */}
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          {/* 关卡 1 */}
+                          <div className={`px-2.5 py-1.5 rounded-lg flex items-center justify-between text-[9px] font-bold ${
+                            stage1Passed
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400'
+                              : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-600'
+                          }`}>
+                            <span>1. 原句纠偏</span>
+                            <span>{stage1Passed ? '✓ 已通关' : '○ 待挑战'}</span>
+                          </div>
+
+                          {/* 关卡 2 */}
+                          <div className={`px-2.5 py-1.5 rounded-lg flex items-center justify-between text-[9px] font-bold ${
+                            stage2Passed
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400'
+                              : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-600'
+                          }`}>
+                            <span>2. 场景迁移</span>
+                            <span>{stage2Passed ? '✓ 已掌握' : '○ 待挑战'}</span>
+                          </div>
+                        </div>
+
+                        {/* 展开的详情面板 */}
+                        {isExpanded && (
+                          <div className="pt-3 border-t border-dashed border-zinc-200/50 dark:border-zinc-800 text-[10px] space-y-2 animate-fade-in text-zinc-500">
+                            <p className="flex items-start gap-1">
+                              <span className="font-bold text-zinc-500 shrink-0">💡 推荐表达：</span>
+                              <span className="text-zinc-800 dark:text-zinc-300 font-semibold break-all">
+                                {err.corrected_text || '暂无详细建议，请在全局温习中与 AI 对话纠正'}
+                              </span>
+                            </p>
+                            <p>
+                              <span className="font-bold text-zinc-500">🔍 语法分类：</span>
+                              <span className="font-bold text-blue-600 dark:text-blue-400">{getFriendlyErrorName(err.error_type)}</span>
+                            </p>
+                            <div className="pt-1 text-[9px] text-zinc-400 dark:text-zinc-500 leading-normal space-y-1">
+                              <p className="flex items-center gap-1.5">
+                                <span className={`w-1.5 h-1.5 rounded-full ${stage1Passed ? 'bg-emerald-500' : 'bg-zinc-350 dark:bg-zinc-700'}`} />
+                                第一阶段 (原句纠偏)：扮演过去的自己，在原句上改错，提升短期记忆。
+                              </p>
+                              <p className="flex items-center gap-1.5">
+                                <span className={`w-1.5 h-1.5 rounded-full ${stage2Passed ? 'bg-emerald-500' : 'bg-zinc-350 dark:bg-zinc-700'}`} />
+                                第二阶段 (场景迁移)：AI 创造全新的日常场景盲测相同语法，实现直觉内化。
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="py-6 text-center text-zinc-400 dark:text-zinc-600">
+                  <span className="text-2xl block mb-2">🎉</span>
+                  <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">太棒了！你目前没有任何悬而未决的语法弱项！</p>
+                  <p className="text-[9px] text-zinc-400 dark:text-zinc-500 mt-0.5">继续保持优秀的英语直觉表达吧</p>
+                </div>
+              )}
+
+              {/* 已彻底消灭的错题 (荣誉册) */}
+              {errorRecords.filter(e => e.noted_by_user).length > 0 && (
+                <div className="pt-2 border-t border-dashed border-zinc-200/50 dark:border-zinc-900">
+                  <button
+                    onClick={() => setShowConqueredVault(!showConqueredVault)}
+                    className="w-full flex items-center justify-between py-2 text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:opacity-90 active:scale-[0.99] transition-all cursor-pointer"
+                  >
+                    <span className="flex items-center gap-1">
+                      <span>🏆 已消灭的直觉盲区 ({errorRecords.filter(e => e.noted_by_user).length})</span>
+                    </span>
+                    <span>{showConqueredVault ? '收起 ▴' : '展开 ▾'}</span>
+                  </button>
+
+                  {showConqueredVault && (
+                    <div className="space-y-2 mt-3 pt-2 animate-fade-in">
+                      {errorRecords.filter(e => e.noted_by_user).map((err) => (
+                        <div key={err.id} className="p-2.5 rounded-lg bg-emerald-500/[0.02] border border-emerald-500/10 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[8px] font-bold text-emerald-600 dark:text-emerald-500 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              {err.error_type} 已攻克
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-zinc-400 dark:text-zinc-500 line-through leading-none">
+                            原句：{err.original_text}
+                          </p>
+                          <p className="text-[10px] font-semibold text-zinc-700 dark:text-zinc-300 leading-normal flex items-start gap-1">
+                            <span className="shrink-0 text-emerald-500">➔</span>
+                            <span>正确：{err.corrected_text || '已改正'}</span>
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </Card>
           </div>
         </div>
@@ -598,7 +826,7 @@ export default function ProgressPage() {
                     ? isEnglish
                       ? 'bg-blue-500 text-white ring-4 ring-blue-500/20 animate-pulse'
                       : 'bg-amber-500 text-white ring-4 ring-amber-500/20 animate-pulse'
-                    : 'bg-zinc-100 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-650 ring-4 ring-zinc-100/10'
+                    : 'bg-zinc-100 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600 ring-4 ring-zinc-100/10'
                 }`}>
                   {isMastered ? '✓' : isInProgress ? '🔍' : '🔒'}
                 </span>
@@ -615,7 +843,7 @@ export default function ProgressPage() {
                 }`}>
                   <div className="flex items-center justify-between">
                     <span className={`text-xs font-bold ${
-                      isLocked ? 'text-zinc-400 dark:text-zinc-650' : 'text-zinc-800 dark:text-zinc-200'
+                      isLocked ? 'text-zinc-400 dark:text-zinc-600' : 'text-zinc-800 dark:text-zinc-200'
                     }`}>
                       {skill.name}
                     </span>
@@ -626,7 +854,7 @@ export default function ProgressPage() {
                         ? isEnglish
                           ? 'bg-blue-500/10 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400'
                           : 'bg-amber-500/10 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
-                        : 'bg-zinc-100 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-650'
+                        : 'bg-zinc-100 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600'
                     }`}>
                       {isMastered ? '已掌握' : isInProgress ? '探索中' : '待激活'}
                     </span>
@@ -689,7 +917,7 @@ export default function ProgressPage() {
                     {/* 图片展示区 (仅在非英语模块下显示) */}
                     {!isEnglish && (
                       hasPhotos ? (
-                        <div className="grid grid-cols-2 gap-2 overflow-hidden rounded-xl mb-3.5 border border-zinc-250/20 dark:border-zinc-800/40 shadow-xs">
+                        <div className="grid grid-cols-2 gap-2 overflow-hidden rounded-xl mb-3.5 border border-zinc-200/20 dark:border-zinc-800/40 shadow-xs">
                           {beforePhotoUrl ? (
                             <div className="relative aspect-[4/3] overflow-hidden group">
                               <img src={beforePhotoUrl} alt="Before" className="w-full h-full object-cover transition-transform duration-350 group-hover:scale-105" />
@@ -722,7 +950,7 @@ export default function ProgressPage() {
                             <div />
                           </div>
                           {/* 居中相机标线与图标 */}
-                          <div className="flex flex-col items-center gap-1.5 text-zinc-400 dark:text-zinc-650 opacity-60">
+                          <div className="flex flex-col items-center gap-1.5 text-zinc-400 dark:text-zinc-600 opacity-60">
                             <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
                               <circle cx="12" cy="13" r="3.75" strokeLinecap="round" strokeLinejoin="round" />
@@ -733,7 +961,7 @@ export default function ProgressPage() {
                       )
                     )}
                     
-                    <h3 className="text-xs font-bold text-zinc-850 dark:text-zinc-250 mb-1 flex items-center gap-1">
+                    <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1 flex items-center gap-1">
                       💡 {d.title}
                     </h3>
                     <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed line-clamp-3 mb-4">
@@ -741,7 +969,7 @@ export default function ProgressPage() {
                     </p>
                   </div>
 
-                  <div className="flex items-center justify-between border-t border-zinc-250/20 dark:border-zinc-800/40 pt-3 mt-auto">
+                  <div className="flex items-center justify-between border-t border-zinc-200/20 dark:border-zinc-800/40 pt-3 mt-auto">
                     <div className="flex flex-wrap gap-1">
                       {d.tags?.slice(0, 3).map((tag: string) => (
                         <span key={tag} className={`px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wider ${
@@ -790,4 +1018,18 @@ export default function ProgressPage() {
       </div>
     </div>
   )
+}
+
+function getFriendlyErrorName(type: string): string {
+  const names: Record<string, string> = {
+    'grammar-tense': '动词时态 (Tenses)',
+    'grammar-article': '冠词使用 (Articles)',
+    'grammar-preposition': '介词搭配 (Prepositions)',
+    'grammar-word-order': '语序结构 (Word Order)',
+    'grammar-agreement': '主谓一致 (Subject-Verb Agreement)',
+    'vocabulary-choice': '词汇搭配 (Word Choice)',
+    'expression-chinglish': '中式英语 (Chinglish)',
+    'expression-incomplete': '句子完整性 (Sentence Completeness)',
+  }
+  return names[type] || type || '语法词汇 (Grammar/Vocabulary)'
 }

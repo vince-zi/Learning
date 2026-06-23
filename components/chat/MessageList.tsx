@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { MessageBubble } from './MessageBubble'
+import { useSessionStore } from '@/store/session-store'
 import type { Message } from '@/core/models/session'
 
 interface MessageListProps {
@@ -11,6 +12,7 @@ interface MessageListProps {
 
 export function MessageList({ messages, isLoading }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const module = useSessionStore((s) => s.module)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -20,7 +22,9 @@ export function MessageList({ messages, isLoading }: MessageListProps) {
     return (
       <div className="flex w-full h-full items-center justify-center p-8">
         <p className="text-sm text-zinc-400 dark:text-zinc-500">
-          上传你的第一张照片，开始对话吧
+          {module === 'english'
+            ? 'Hi, start chatting with your English thinking partner!'
+            : '上传你的第一张照片，开始对话吧'}
         </p>
       </div>
     )

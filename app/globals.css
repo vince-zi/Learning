@@ -23,6 +23,11 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
+html, body {
+  overflow-x: hidden;
+  width: 100%;
+}
+
 /* Custom animations */
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(8px); }

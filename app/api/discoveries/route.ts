@@ -137,11 +137,33 @@ export async function POST(request: Request) {
           .eq('user_id', userId)
           .maybeSingle()
 
-        const profilePrompt = `Based on the following English conversation history, perform a language proficiency evaluation of the User. 
-If it is their first evaluation, estimate their baseline CEFR level and vocabulary size. If it's a regular chat, perform an incremental update (e.g. increase vocabulary if they showed progress, update strengths and weaknesses).
+        // 获取用户历史所有已解决/未解决错词，以提供极具说服力的提升汇总
+        const { data: allErrors } = await supabase
+          .from('error_records')
+          .select('original_text, corrected_text, error_type, noted_by_user')
+          .eq('user_id', userId)
+
+        const unsolvedErrors = (allErrors || []).filter((e: any) => !e.noted_by_user)
+        const solvedErrors = (allErrors || []).filter((e: any) => e.noted_by_user)
+
+        const unsolvedSummary = unsolvedErrors.length > 0
+          ? unsolvedErrors.map((e: any) => `- "${e.original_text}" (考点: ${e.error_type})`).join('\n')
+          : '暂无未解决的语法错句。'
+
+        const solvedSummary = solvedErrors.length > 0
+          ? solvedErrors.map((e: any) => `- 错句 "${e.original_text}" 已完美重构为 "${e.corrected_text || ''}"`).join('\n')
+          : '暂无已彻底掌握的语法。'
+
+        const profilePrompt = `Based on the following English conversation history and the user's historical error ledger, perform a language proficiency evaluation of the User.
 
 Conversation History:
 ${messagesSummary}
+
+User's Historical Errors (Unsolved, still weak areas):
+${unsolvedSummary}
+
+User's Conquered Errors (Solved, demonstrating progress & improvement):
+${solvedSummary}
 
 ${currentProfile ? `Current Profile State:
 - CEFR Level: ${currentProfile.cefr_level}
@@ -153,8 +175,8 @@ Evaluate and output a JSON object containing the following keys (no markdown cod
 {
   "cefr_level": "A1" | "A2" | "B1" | "B2" | "C1" | "C2",
   "known_vocabulary_size": number (integer estimate of their vocabulary size),
-  "strengths": ["用中文列出 2-3 个具体的英语优势", "例如：'表达流利且结构完整', '善于使用主动词进行描述'"],
-  "weaknesses": ["用中文列出 2-3 个具体的英语弱点或改进方向", "例如：'过去时态的不规则变化还需熟悉', '单复数和第三人称单数词尾易遗漏'"]
+  "strengths": ["用中文列出 2-3 个具体的英语优势，优先结合并具体指出用户已经攻克了哪些语法盲区 (Conquered Errors)，给用户极强的提升感和成就感"],
+  "weaknesses": ["用中文列出 2-3 个具体的英语弱点或改进方向，需要精准地从 Unsolved 列表中提取错题模式并给出建议"]
 }
 
 Ensure the output is valid JSON.`

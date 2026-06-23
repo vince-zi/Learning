@@ -107,7 +107,7 @@ function DiscoveryContent() {
           </h3>
           <div className="grid grid-cols-2 gap-4">
             <div className="group text-center">
-              <div className="overflow-hidden rounded-2xl border border-zinc-200/60 dark:border-zinc-850 shadow-md transition-all">
+              <div className="overflow-hidden rounded-2xl border border-zinc-200/60 dark:border-zinc-800 shadow-md transition-all">
                 <img
                   src={photos[0].imageUrl}
                   alt="第一次拍摄"

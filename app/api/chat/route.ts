@@ -29,7 +29,14 @@ export async function POST(request: Request) {
       imageUrls,
       module = 'photography',
       continueChatting = false,
+      explanationPreference,
     } = body
+
+    const langPref = explanationPreference // null | 'chinese' | 'balanced' | 'english'
+    const effectivePref: 'chinese' | 'balanced' | 'english' = (langPref === 'chinese' || langPref === 'english' || langPref === 'balanced') ? langPref : 'balanced'
+    const isEnglishPref = effectivePref === 'english'
+    const isChinesePref = effectivePref === 'chinese'
+    const isBalancedPref = effectivePref === 'balanced'
 
     if (!sessionId || !userMessage) {
       return NextResponse.json(
@@ -62,7 +69,16 @@ export async function POST(request: Request) {
 
     // 1.1 查询用户在全局或该节点下的历史“发现卡片”和“错题记录” (仅英语温习/特训可用)
     let userContextPrompt = ''
+    let showChooseLangHint = false
+    let targetErrorToReview: any = null
+    let targetErrorStage = 0
+    let targetErrorTypeFriendly = ''
+    let userWeaknesses: string[] = []
+let practiceWeaknessProfile = ''
+let weaknessProfileItems: Array<{errorType: string, friendlyName: string, exampleSentence: string, mastered: boolean}> = []
+
     if (isEnglish && (isReviewMode || isPracticeMode)) {
+      showChooseLangHint = !explanationPreference && !continueChatting
       const isGlobal = sessionTheme === '全局温习' || sessionTheme === '全局针对训练'
       
       let discoveriesQuery = supabase
@@ -78,10 +94,9 @@ export async function POST(request: Request) {
 
       const { data: nodeErrors } = await supabase
         .from('error_records')
-        .select('original_text, corrected_text, error_type, error_pattern')
+        .select('original_text, corrected_text, error_type, error_pattern, severity, created_at')
         .eq('user_id', userId)
         .eq('noted_by_user', false)
-        .limit(isGlobal ? 10 : 5)
 
       if (nodeDiscoveries && nodeDiscoveries.length > 0) {
         userContextPrompt += `\n[User's Past Discoveries]:\n` + 
@@ -90,6 +105,39 @@ export async function POST(request: Request) {
       if (nodeErrors && nodeErrors.length > 0) {
         userContextPrompt += `\n[User's Past Errors/Mistakes]:\n` + 
           nodeErrors.map(e => `- User said: "${e.original_text}". Correct form: "${e.corrected_text || ''}". Error Type: ${e.error_type} (${e.error_pattern || ''})`).join('\n')
+        
+        // 挑选一个错题作为本次会话的主攻复习句 (使用基于遗忘曲线的间隔重复加权选题算法)
+        if (isReviewMode) {
+          targetErrorToReview = selectTargetErrorSpacedRepetition(nodeErrors)
+          const pattern = targetErrorToReview ? (targetErrorToReview.error_pattern || '') : ''
+          targetErrorStage = pattern.endsWith(':stage-1') ? 1 : 0
+          targetErrorTypeFriendly = targetErrorToReview ? getFriendlyErrorName(targetErrorToReview.error_type) : ''
+        }
+
+        // 如果用户画像里没有总结出弱势，直接对现有的待复习错句类型做翻译兜底
+        if (userWeaknesses.length === 0) {
+          const rawTypes = Array.from(new Set(nodeErrors.map((e: any) => e.error_type))) as string[]
+          userWeaknesses = rawTypes.map(t => getFriendlyErrorName(t))
+        }
+
+        // 为针对性训练构建弱点画像（含频率排序 + 例句）
+        if (isPracticeMode && nodeErrors && nodeErrors.length > 0) {
+          const errorsByType: Record<string, any[]> = {}
+          for (const e of nodeErrors) {
+            if (!errorsByType[e.error_type]) errorsByType[e.error_type] = []
+            errorsByType[e.error_type].push(e)
+          }
+          const sortedTypes = Object.entries(errorsByType).sort((a, b) => b[1].length - a[1].length)
+          practiceWeaknessProfile = '\n【你的英语弱点画像 — 针对性训练专属】\n'
+          weaknessProfileItems = sortedTypes.map(([type, errors]) => {
+            const fn = getFriendlyErrorName(type)
+            const ex = errors.slice(0, 1).map((e: any) => `"${e.original_text}" → "${e.corrected_text || ''}"`).join('; ')
+            practiceWeaknessProfile += `${weaknessProfileItems.length + 1}. ${fn} (${errors.length}次) — 举例: ${ex}\n`
+            return { errorType: type, friendlyName: fn, exampleSentence: ex, mastered: false }
+          })
+        } else if (isPracticeMode) {
+          practiceWeaknessProfile = '\n【你的英语弱点画像 — 针对性训练专属】\n⚠️ 暂无历史错题记录。请从最常见的初学者语法错误开始训练，并在开场告知用户。\n'
+        }
       }
     }
 
@@ -119,7 +167,81 @@ You must act as a Gentle Guide. Use encouraging, patient, and warm tones. Use in
 你的核心风格是“温和引导”。在提问时，循序渐进，极具同理心和鼓励性。多肯定用户的观察。问题要足够简单、聚焦。不要给用户太大的认知负荷。如果用户感到不确定，立即缩小问题范围并给以提示或选项。`
     }
 
-    const finalSystemPrompt = activeSystemPrompt + styleInstruction
+    let explanationPrefPrompt = ''
+    let systemPromptForThisRequest = activeSystemPrompt
+    if (isEnglish) {
+      if (isChinesePref) {
+        // 中文模式：regex 替换系统提示为中文 heavy 版本
+        systemPromptForThisRequest = systemPromptForThisRequest
+          .replace(
+            /1\. \*\*English-First with Chinese Help When Needed[\s\S]*?(?=\n2\. \*\*)/,
+            `1. **中英双语 — 中文讲解为主**：
+   - 英文进行对话和提问，但语法讲解、纠正、教学点**必须用中文**详细解释。
+   - 遇到复杂词汇或长句时**必须在后面加括号提供中文翻译**。例如："He spilled the beans (泄露了秘密)。"
+   - 中文讲解使用"小白大白话"——用生活化类比来解释语法，严禁学术术语。
+   - 每条讲解回复至少要有 25% 是中文。`
+          )
+          .replace(
+            /2\. \*\*Clear Grammar Explanations[\s\S]*?(?=\n3\. \*\*)/,
+            `2. **语法讲解 — 中文大白话（禁止反问）**：
+   - 如果用户提问语法或处于纠错中，**必须立即用中文给出直接、清晰的讲解**，绝对不能反问用户。
+   - **小白大白话教学**：用最生动日常的中文类比解释，严禁学术语法名词。
+   - -ing：表示"正在做"或"把动作当成一件事情/爱好"。
+   - the：特指那个你我都知道的特定东西。that：指着/区分的那一个。
+   - to do：倾向于未来（想去跑），doing：正在做或指整个动作本身。
+   - 每个语法纠正必须用中文解释，不止英文。`
+          )
+          .replace(
+            /4\. \*\*温和纠错[\s\S]*?(?=\n5\. \*\*)/,
+            `4. **温和纠错（Recast + 中文解释 — 必须）**：
+   当用户犯错时，不要直接说"That's wrong"。在回复中自然重复正确形式，**必须**用括号加中文解释。
+   每个纠正都要有中文解释——不止是英文。例如：
+   - 用户："I go to the store yesterday."
+   - 你："Oh, you went (went是go的过去式，昨天的事→用过去式 went) to the store yesterday! What did you buy? 🛒"`
+          )
+      } else if (isBalancedPref) {
+        // 平衡模式：regex 替换系统提示，必须含中文提示
+        systemPromptForThisRequest = systemPromptForThisRequest
+          .replace(
+            /1\. \*\*English-First with Chinese Help When Needed[\s\S]*?(?=\n2\. \*\*)/,
+            `1. **English Conversation + Chinese Grammar Hints (英语对话，中文语法提示)**：
+   - Chat and ask questions in English.
+   - When explaining grammar or correcting errors: English explanation first, then a Chinese hint in brackets like (提示：...). This is MANDATORY.
+   - Every grammar correction or teaching point MUST include Chinese brackets. Do not skip them.
+   - For vocabulary: English definition first, then (中文词) in brackets.`
+          )
+          .replace(
+            /2\. \*\*Clear Grammar Explanations[\s\S]*?(?=\n3\. \*\*)/,
+            `2. **Grammar Teaching — Chinese Hint Required (语法教学要求)**：
+   - When teaching grammar: simple English first, then (提示：中文解释) in brackets. REQUIRED, not optional.
+   - Use everyday analogies. No academic grammar terms.
+   - Every grammar correction MUST end with a Chinese bracket hint — even for simple corrections add at least a short one.`
+          )
+          .replace(
+            /4\. \*\*温和纠错[\s\S]*?(?=\n5\. \*\*)/,
+            `4. **Correction with Chinese Hint (纠错+提示)**：Repeat the correct form naturally, then add Chinese hint: (注意：...). Example:
+   - User: "I go to the store yesterday."
+   - You: "Oh, you went (注意：yesterday是过去时间 → 用过去式 went) to the store yesterday! What did you buy? 🛒"`
+          )
+      } else if (isEnglishPref) {
+        // 英语模式：追加硬覆盖 Prompt，不依赖脆弱的 regex 去匹配系统提示文本
+        explanationPrefPrompt = `\n\n## LANGUAGE PREFERENCE: ENGLISH IMMERSION (纯英沉浸 — 强制覆盖)
+[本指令优先级最高 — 覆盖之前 ALL 语言相关指令，包括系统提示中的任何中文相关要求]:
+
+The user has chosen PURE ENGLISH mode. This is NON-NEGOTIABLE.
+
+ABSOLUTE RULES:
+- You MUST output ZERO Chinese characters in your entire response. Not even one.
+- Explain grammar, corrections, and teaching points in SIMPLE ENGLISH ONLY.
+- If the user seems confused, simplify your English further. Use emoji. Do NOT fall back to Chinese.
+- When correcting errors (Recast), repeat the correct form naturally in English. No Chinese notes.
+- For vocabulary: English definition only. No Chinese translations.
+- IGNORE any instruction in the system prompt that tells you to use Chinese, provide Chinese translations, or add Chinese hints. Those instructions do NOT apply in this mode.
+- If you output even a single Chinese character, you have failed this task.`
+      }
+    }
+
+    const finalSystemPrompt = systemPromptForThisRequest + styleInstruction + explanationPrefPrompt
     const activeKnowledgeGraph = isEnglish ? englishKnowledgeGraph : photographyKnowledgeGraph
     const defaultNodeId = isEnglish ? 'self-intro' : 'visual-focus'
 
@@ -254,29 +376,94 @@ Instruct them to click the "Generate Placement Report" button below to view the 
         const isGlobal = sessionTheme === '全局温习' || sessionTheme === '全局针对训练'
         const nodeDisplayName = isGlobal ? '我们的全部对话' : nodeName
         if (isReviewMode) {
-          actionPrompt = `You are in "Review Mode" (温习模式) for "${nodeDisplayName}". 
-Your role is to act as the "past user" (曾经的我/Vince). You must review the user's past mistakes or expressions from history.
-Look at the USER HISTORICAL DATA CONTEXT provided in the system prompt.
-If there are past error records, pick one (e.g. user said "original_text"), open the conversation in English by saying:
-"Hi! I'm the past you. In our previous chats, I tried to say: '[Quote user's past original_text]'. Back then, it wasn't the most natural English. Now, as my smarter, present self, can you help me correct or rephrase this statement in a better way? How should we say it?"
-If no past errors are found, look up a typical beginner mistake (e.g. verb pattern errors like 'I like play...', or tense errors like 'I go to school yesterday'), invent a typical mistake, and ask the user to correct/rephrase it.
-Be encouraging, play the role of the past user asking their present self for help. Explain clearly in both English and Chinese. Ask only one question.`
+          if (targetErrorToReview) {
+            const orig = targetErrorToReview.original_text
+            const corr = targetErrorToReview.corrected_text || ''
+            const type = targetErrorToReview.error_type || ''
+            const targetConceptName = getFriendlyErrorName(type)
+            
+            if (targetErrorStage === 0) {
+              actionPrompt = `You are in "Review Mode" (Stage 1 — Correct the original sentence).
+Your role is an encouraging, warm conversation companion. Follow the language mode rules from the system prompt (English/Balanced/Chinese).
+Open the conversation in a friendly companion tone. Say: look what I found in our chat logs — you said: '${orig}'. We wanted to make it sound more natural. As our smarter self, how would you rewrite this to make it perfect?
+Ask only one question.${showChooseLangHint ? '\n\n⚠️ IMPORTANT: You MUST append exactly " [CHOOSE_LANG]" at the very end of your response to ask for language preference.' : ''}`
+            } else {
+              actionPrompt = `You are in "Review Mode" (Stage 2 — New scenario application).
+Your role is an encouraging, warm conversation companion testing if the user has mastered "${targetConceptName}" in a new context. Follow the language mode rules from the system prompt.
+Create a vivid, simple daily scenario (ordering at a cafe, airport, hobbies, etc.). Challenge the user with a sentence that tests "${type}" in this new scenario. Do NOT show the original wrong sentence "${orig}" or corrected sentence "${corr}".
+Ask only one question.${showChooseLangHint ? '\n\n⚠️ IMPORTANT: You MUST append exactly " [CHOOSE_LANG]" at the very end of your response to ask for language preference.' : ''}`
+            }
+          } else {
+            actionPrompt = `You are in "Review Mode".
+Since the user has no recorded mistakes, pick a typical beginner English grammar mistake (e.g. "I very like playing basketball" or "I go to school yesterday"), play the role of the past user saying it, and ask the user to correct/rephrase it. Ask only one question.${showChooseLangHint ? '\n\n⚠️ IMPORTANT: You MUST append exactly " [CHOOSE_LANG]" at the very end of your response to ask for language preference.' : ''}`
+          }
         } else if (isPracticeMode) {
           actionPrompt = `You are in "Targeted Practice Mode" (针对训练模式) for "${nodeDisplayName}".
-Your goal is to guide the user to practice their weak areas.
-Look at the USER HISTORICAL DATA CONTEXT provided in the system prompt to find their past errors.
-Open the conversation in English by welcoming the user to Targeted Practice, explain the specific weak area we are practicing today (e.g. correct verb patterns, tenses, or prepositions, based on their past mistakes or node topic), and give them a targeted translation or correction challenge.
-Example challenge: "How do you translate: '我喜欢打篮球，但不喜欢跑步' into natural English? Pay attention to the verb patterns."
-Explain clearly in both English and Chinese. Ask only one question.`
+
+${practiceWeaknessProfile}
+
+${isEnglishPref ? `
+OPENING — This is the first message. Do the following:
+1. Warmly welcome the user in ENGLISH. Say: "Welcome to Targeted Practice! I analyzed your conversation history and here's your grammar weakness profile:"
+2. Clearly announce their weakness profile in English: read out each weakness from the profile above, in order, with the example error sentence.
+3. Declare: "Today we'll start with #1 — [weakness name]." Explain this weakness in super simple, plain everyday English with a vivid analogy. No academic terms.
+4. Give ONE targeted challenge (translation, correction, or fill-in-blank) that specifically tests this weakness.
+
+CRITICAL RULES:
+- ONLY train weaknesses listed in the profile above. NEVER introduce a grammar topic not in the profile.
+- Stay on one weakness until the user answers correctly at least 2 times in a row. When mastered, append "[MASTERED: <friendlyName>]" (use the exact friendly name from the profile). Then move to the next weakness.
+- Progress: #1 → #2 → #3. No skipping.
+- RESPOND IN ENGLISH ONLY. Zero Chinese characters.
+- If no weaknesses in profile, pick ONE common beginner topic and stick with it.
+
+Ask only one challenge. Keep it encouraging.`
+: isBalancedPref ? `
+OPENING — This is the first message. Do the following:
+1. Warmly welcome the user bilingually. Say: "Welcome to Targeted Practice! 欢迎来到针对训练！I analyzed your chat history. Here's your grammar weakness profile / 你的语法弱点画像："
+2. Announce each weakness with its English name FIRST, Chinese name in brackets: e.g. "1. Verb Tenses (动词时态) — you said 'I go yesterday' instead of 'I went'."
+3. Declare: "Today we'll start with #1 — [weakness]. 今天从第1个开始。" Explain this weakness in simple everyday English. Add a short Chinese analogy if it helps.
+4. Give ONE targeted challenge (translation, correction, or fill-in-blank) in English.
+
+CRITICAL RULES:
+- ONLY train weaknesses listed in the profile above. NEVER introduce a grammar topic not in the profile.
+- Stay on one weakness until the user answers correctly at least 2 times in a row. When mastered, append "[MASTERED: <friendlyName>]" (use the exact friendly name from the profile).
+- Progress: #1 → #2 → #3. No skipping.
+- MAIN CONVERSATION: English. GRAMMAR CORRECTIONS: simple English first, short Chinese hint only for tricky points.
+- If no weaknesses in profile, pick ONE common beginner topic and stick with it.
+
+Ask only one challenge. Keep it encouraging.`
+: `
+OPENING — This is the first message. Do the following:
+1. Warmly welcome the user. Say: "欢迎来到针对训练！我分析了你的历史对话记录，这是你目前的语法弱点画像："
+2. Clearly announce their weakness profile: read out each weakness from the profile above, in order, with the example error sentence.
+3. Declare: "今天我们从第 1 个开始——【弱点名称】。" Explain this weakness in super simple "大白话" Chinese with a vivid everyday analogy. No academic terms.
+4. Give ONE targeted challenge (translation, correction, or fill-in-blank) that specifically tests this weakness.
+
+CRITICAL RULES:
+- ONLY train weaknesses listed in the profile above. NEVER introduce a grammar topic not in the profile.
+- Stay on one weakness until the user answers correctly at least 2 times in a row. When mastered, append "[MASTERED: <弱点名称>]" (e.g. "[MASTERED: 动词时态 (Tenses)]") at the very end of your response. Only then move to the next weakness.
+- Progress: #1 → #2 → #3. No skipping.
+- If no weaknesses in profile, pick ONE common beginner topic and stick with it.
+
+Ask only one challenge. Keep it encouraging.`
+}
+- NEVER skip around randomly. Progress: #1 mastered → #2 mastered → #3 mastered.
+- If the user has no weaknesses in the profile (empty), pick ONE common beginner topic and stick with it.
+
+Ask only one challenge. Keep it encouraging.${showChooseLangHint ? '\n\n⚠️ IMPORTANT: You MUST append exactly " [CHOOSE_LANG]" at the very end of your response to ask for language preference.' : ''}`
         } else {
-          const errorHint = englishDiag && englishDiag.errorsInResponse.length > 0
-            ? `\n用户在第一条消息中的潜在语言问题：${englishDiag.errorsInResponse.map(e => e.errorType).join(', ')}。但请不要直接指出来——在回复中自然地使用 recast（隐性纠错）。`
+          const errorHintFirst = englishDiag && englishDiag.errorsInResponse.length > 0
+            ? (isEnglishPref
+              ? `\nPotential language issues in the user's first message: ${englishDiag.errorsInResponse.map(e => e.errorType).join(', ')}. Do NOT point them out directly — use recast (implicit correction) naturally in your reply.`
+              : isBalancedPref
+              ? `\nPotential language issues in user's first message: ${englishDiag.errorsInResponse.map(e => e.errorType).join(', ')}. Do NOT point them out directly. Use recast naturally in your reply. Brief Chinese hint in brackets only if the error seems confusing.`
+              : `\n用户在第一条消息中的潜在语言问题：${englishDiag.errorsInResponse.map(e => e.errorType).join(', ')}。但请不要直接指出来——在回复中自然地使用 recast（隐性纠错）。`)
             : ''
           actionPrompt = `用户刚刚开始了英语学习对话。请你用英语和他们聊天，像朋友一样。
 目的是引导用户用英语多表达。从用户的消息出发，问一个相关的问题让他们继续说下去。
 如果用户的消息很短，问一个开放式问题让他们展开。如果用户已经说了一些内容，追问更多细节。
 每次只问一个问题。用自然的、口语化的英语。
-如果用户的表达中有语法或词汇错误，不要直接指出来——用 recast（隐性纠错），在你的回复中自然地使用正确的形式。${errorHint}`
+如果用户的表达中有语法或词汇错误，不要直接指出来——用 recast（隐性纠错），在你的回复中自然地使用正确的形式。${errorHintFirst}`
         }
       } else {
         // 第一条消息：摄影模式-无图片，直接提问进行话题讨论
@@ -287,27 +474,120 @@ Explain clearly in both English and Chinese. Ask only one question.`
     } else if (isEnglish) {
       // 英语模块：后续对话
       const errorHint = englishDiag && englishDiag.errorsInResponse.length > 0
-        ? `\n用户在最近回答中的潜在语言问题：${englishDiag.errorsInResponse.map(e => `${e.errorType}(${e.severity})`).join(', ')}。纠正策略：${englishDiag.correctionType || 'recast'}。使用 recast（在你的回复中自然重复正确形式）来纠正。如果同一错误已出现多次，可以给一个简短的元语言提示。`
+        ? (isEnglishPref
+          ? `\nPotential language issues in the user's recent response: ${englishDiag.errorsInResponse.map(e => `${e.errorType}(${e.severity})`).join(', ')}. Strategy: ${englishDiag.correctionType || 'recast'}. Use recast (naturally repeat the correct form in your reply) to correct. If the same error has appeared multiple times, give a short meta-linguistic hint in English.`
+          : isBalancedPref
+          ? `\nPotential language issues in user's response: ${englishDiag.errorsInResponse.map(e => `${e.errorType}(${e.severity})`).join(', ')}. Strategy: ${englishDiag.correctionType || 'recast'}. Correct via recast. If error persists, add a brief Chinese hint in brackets.`
+          : `\n用户在最近回答中的潜在语言问题：${englishDiag.errorsInResponse.map(e => `${e.errorType}(${e.severity})`).join(', ')}。纠正策略：${englishDiag.correctionType || 'recast'}。使用 recast（在你的回复中自然重复正确形式）来纠正。如果同一错误已出现多次，可以给一个简短的元语言提示。`)
         : ''
       const levelHint = englishDiag
-        ? `\n用户的估计 CEFR 水平：${englishDiag.cefrEstimate}。调整你的词汇和句子复杂度匹配这个水平（i+1 原则）。`
+        ? (isEnglishPref
+          ? `\nUser's estimated CEFR level: ${englishDiag.cefrEstimate}. Adjust your vocabulary and sentence complexity to match this level (i+1 principle).`
+          : isBalancedPref
+          ? `\nUser's estimated CEFR level: ${englishDiag.cefrEstimate}. Adjust vocabulary and complexity accordingly (i+1).`
+          : `\n用户的估计 CEFR 水平：${englishDiag.cefrEstimate}。调整你的词汇和句子复杂度匹配这个水平（i+1 原则）。`)
         : ''
 
       if (isReviewMode) {
-        actionPrompt = `You are in "Review Mode" (温习模式).
-You are still roleplaying as the "past user" discussing with their "present self".
-Evaluate the user's latest response. Did they correct the past mistake/phrase successfully and naturally?
+        if (targetErrorToReview) {
+          const orig = targetErrorToReview.original_text
+          const type = targetErrorToReview.error_type || ''
+          
+          if (targetErrorStage === 0) {
+            actionPrompt = `You are in "Review Mode" (Stage 1 — Correct the original sentence).
+You are a warm English conversation companion helping them perfect their past statement.
+The original error was: "${orig}".
+Evaluate the user's latest response. Did they correct this past error successfully and naturally?
 Be extremely strict: the rephrased sentence must be 100% correct, natural, and native-like English (100% accuracy).
-If it is 100% correct and natural, praise them warmly, explain why the correction is correct (briefly in English & Chinese). 
-Crucially, you must append "[RESOLVED: <exact_original_text_of_the_error_being_corrected>]" at the very end of your response. The original text in the tag must match the exact original_text from the historical context (e.g., "[RESOLVED: I very like dogs]").
-If they did not succeed or if there are still minor errors, typos, or unnatural phrasing, give them a gentle hint (recast or simple explanation), ask them to try rephrasing it again, and do NOT append the RESOLVED tag.
-Keep the focus entirely on reviewing and perfecting their past language expressions. Ask only one question. ${errorHint}`
+If it is 100% correct and natural, praise them warmly (e.g. "Bull's-eye! Perfect intuition!"), explain the grammar rule or why the correction is correct in simple terms (no academic grammar terms).
+Crucially, you must append "[RESOLVED: ${orig}]" at the very end of your response.
+If they did not succeed or if there are still minor errors, typos, or unnatural phrasing, do NOT show them the answer. Instead, use Recast and Scaffolding (e.g. give a gentle clue like "Close! Think about the verb tense here...", ask a scaffolding question), and encourage them to try rephrasing it again. Do NOT append the RESOLVED tag.
+Keep the focus entirely on guiding them to perfect their past language expressions. Ask only one question. You may use up to 6 sentences for evaluation + explanation + next challenge. ${errorHint}${showChooseLangHint ? '\n\n⚠️ IMPORTANT: You MUST append exactly " [CHOOSE_LANG]" at the very end of your response to ask for language preference.' : ''}`
+          } else {
+            actionPrompt = `You are in "Review Mode" (Stage 2 — New scenario application).
+You are a warm English conversation companion testing if they can apply "${type}" in the scenario.
+The user's original error being reviewed is: "${orig}".
+Evaluate the user's latest response. Did they complete the translation or sentence challenge correctly, using the correct grammar form of "${type}"?
+Be extremely strict: their sentence must be 100% correct and natural English (100% accuracy).
+If it is 100% correct and natural, praise them warmly (e.g. "Spot on! You've totally mastered this!"), explain the grammar point in simple terms (no academic grammar terms).
+Crucially, you must append "[RESOLVED: ${orig}]" at the very end of your response to mark this error as fully conquered!
+If they did not succeed or if there are still minor errors, typos, or incorrect phrasing, do NOT give the answer. Use Recast and Scaffolding (e.g. "Almost! Remember to use... Can you try that again?"), guide them step-by-step, and do NOT append the RESOLVED tag.
+Keep the focus entirely on perfecting their expression under this new scenario. Ask only one question. You may use up to 6 sentences for evaluation + explanation + next challenge. ${errorHint}${showChooseLangHint ? '\n\n⚠️ IMPORTANT: You MUST append exactly " [CHOOSE_LANG]" at the very end of your response to ask for language preference.' : ''}`
+          }
+        } else {
+          actionPrompt = `You are in "Review Mode".
+Evaluate the user's latest response. Did they correct the mistake successfully?
+If they did, praise them and append "[RESOLVED: <original_mistake>]" at the end. Otherwise give them a hint and ask them to try again.${showChooseLangHint ? '\n\n⚠️ IMPORTANT: You MUST append exactly " [CHOOSE_LANG]" at the very end of your response to ask for language preference.' : ''}`
+        }
       } else if (isPracticeMode) {
         actionPrompt = `You are in "Targeted Practice Mode" (针对训练模式).
-Evaluate the user's latest response for the targeted exercise.
-Provide immediate feedback: use recast to show the correct form, point out any grammar or vocabulary weaknesses, and explain the rule briefly in English & Chinese.
-Then, present the next targeted challenge (e.g. another translation sentence, a sentence transformation, or a fill-in-the-blank question) to reinforce their learning.
-Keep the training focused, encouraging, and structured. Ask only one question. ${errorHint}`
+
+${practiceWeaknessProfile}
+
+YOUR JOB: Read the conversation history to determine which weakness from the profile you are currently practicing. Then evaluate the user's latest response.
+
+${isEnglishPref ? `
+EVALUATION (English mode):
+- If the user CORRECTLY applied the grammar rule:
+  * Praise warmly in English with a simple explanation of WHY it's correct.
+  * Track: have they answered correctly 2+ times in a row for THIS weakness?
+    - YES (2+ consecutive correct): Announce "Perfect! You've mastered this!" and append "[MASTERED: <friendlyName>]". Then move to the NEXT weakness.
+    - NOT YET (only 1 correct): Give another challenge on the SAME weakness. Say "Nicely done! Let's do one more to lock it in."
+- If the user's answer has ERRORS:
+  * Gently explain the error in simple English. Show the contrast (error → correct). No academic grammar terms.
+  * Give a scaffolded HINT. Stay on the SAME weakness.
+
+CRITICAL CONSTRAINTS:
+- ONLY train weaknesses in the profile. NEVER introduce a new topic.
+- Stay on one weakness until 2+ consecutive correct. Then append [MASTERED: ...].
+- Progress: #1 → #2 → #3. No skipping.
+- Give ONE question at a time.
+- ENGLISH ONLY. Zero Chinese.
+
+WHEN ALL mastered: warmly congratulate and suggest "全局温习" to apply everything in real conversation.
+`
+: isBalancedPref ? `
+EVALUATION (Balanced bilingual mode):
+- If the user CORRECTLY applied the grammar rule:
+  * Praise warmly in English with a simple explanation of WHY. Add a short Chinese cheer like "很好！" in brackets.
+  * Track: have they answered correctly 2+ times in a row for THIS weakness?
+    - YES (2+ consecutive correct): Announce "Well done! You've mastered this! 攻克成功！" and append "[MASTERED: <friendlyName>]". Then move to the NEXT weakness.
+    - NOT YET (only 1 correct): Give another challenge on the SAME weakness. Say "Nice! Let's do one more to make sure. 再来一题巩固一下～"
+- If the user's answer has ERRORS:
+  * Explain the error in simple English FIRST. If tricky, add a short Chinese hint in brackets (1 sentence max). Show the contrast. No academic terms.
+  * Give a scaffolded HINT. Stay on the SAME weakness.
+
+CRITICAL CONSTRAINTS:
+- ONLY train weaknesses in the profile. NEVER introduce a new topic.
+- Stay on one weakness until 2+ consecutive correct. Then append [MASTERED: ...].
+- Progress: #1 → #2 → #3. No skipping.
+- Main explanation: English. Short Chinese hints only for tricky grammar points.
+- Give ONE question at a time.
+
+WHEN ALL mastered: warmly congratulate and suggest "全局温习" to apply everything in real conversation.
+`
+: `
+EVALUATION (中文辅助模式):
+- If the user CORRECTLY applied the grammar rule:
+  * Praise warmly with a "大白话" explanation in Chinese of WHY it's correct.
+  * Track: have they answered correctly 2+ times in a row for THIS weakness?
+    - YES (2+ consecutive correct): Announce "✅ 这个弱点已攻克！" and append exactly "[MASTERED: <弱点名称>]" (e.g. "[MASTERED: 动词时态 (Tenses)]"). Then move to the NEXT weakness.
+    - NOT YET (only 1 correct): Give another challenge on the SAME weakness. Say "很好！再来一题巩固一下～"
+- If the user's answer has ERRORS:
+  * Gently explain the error in "大白话" Chinese. Show the contrast (错 → 对). No academic grammar terms.
+  * Give a scaffolded HINT. Stay on the SAME weakness.
+
+CRITICAL CONSTRAINTS:
+- ONLY train weaknesses in the profile. NEVER introduce a new topic.
+- Stay on one weakness until 2+ consecutive correct. Then append [MASTERED: ...].
+- Progress: #1 → #2 → #3. No skipping.
+- Use "大白话小白教学" — zero academic grammar terms.
+- Give ONE question at a time.
+
+WHEN ALL mastered: warmly congratulate and suggest "全局温习" to apply everything in real conversation.
+`}
+
+${errorHint}${showChooseLangHint ? '\n\n⚠️ IMPORTANT: You MUST append exactly " [CHOOSE_LANG]" at the very end of your response to ask for language preference.' : ''}`
       } else if (currentRoundAiMsgCount >= 4 && !continueChatting) {
         // 多轮后：考虑给英语练习任务
         actionPrompt = `这是当前对话：
@@ -394,7 +674,46 @@ ${conversationSoFar}
 不要直接给答案。每次只问一个问题。如果用户表达了规律性认识，确认并命名它。`
     }
 
-    // 将系统提示(actionPrompt)作为隐藏指令合并到最后一条 user 消息中，确保合法的交替对话格式
+    // 英语模式：清除 actionPrompt 中所有中文指令，替换为对应英文
+    if (isEnglishPref && actionPrompt) {
+      actionPrompt = actionPrompt
+        .replace(/欢迎来到针对训练！/g, 'Welcome to Targeted Practice!')
+        .replace(/我分析了你的历史对话记录，这是你目前的语法弱点画像/g, "I analyzed your chat history. Here's your grammar weakness profile")
+        .replace(/今天我们从第 (\d) 个开始——/g, "Today we'll start with #$1 — ")
+        .replace(/今天我们从第/g, "Today we'll start with #")
+        .replace(/弱点名称/g, 'weakness name')
+        .replace(/大白话/g, 'plain everyday English')
+        .replace(/小白/g, 'beginner-friendly')
+        .replace(/用中英文/g, 'in simple English')
+        .replace(/中英文/g, 'English')
+        .replace(/中文/g, 'English')
+        .replace(/温习模式/g, 'Review Mode')
+        .replace(/针对训练模式/g, 'Targeted Practice Mode')
+        .replace(/第一关/g, 'Level 1')
+        .replace(/第二关/g, 'Level 2')
+        .replace(/原句改错/g, 'Original Sentence Correction')
+        .replace(/新场景迁移/g, 'New Scenario Application')
+        .replace(/⚠️ 重要/g, '⚠️ IMPORTANT')
+        .replace(/对话末尾附加 " \[CHOOSE_LANG\]"/g, 'the very end of your response append " [CHOOSE_LANG]"')
+        .replace(/弱点画像/g, 'weakness profile')
+        .replace(/\(\)/g, '()') // cleanup
+    }
+
+    // 每个语言模式追加统一的结构化输出格式指令
+    const langEnforcementSuffix = isEnglishPref
+      ? '\n\n## OUTPUT LANGUAGE — ENGLISH ONLY\nYour entire output must be in English only. Zero Chinese characters.'
+      : isBalancedPref
+      ? '\n\n## OUTPUT FORMAT — BALANCED\nYour response must include these elements (in order):\n[English greeting/conversation]\n(提示：中文语法提示) — a short Chinese hint in brackets\n[English challenge/question]\n\nYou MUST include the (提示：...) bracket. Do not skip it.'
+      : '\n\n## OUTPUT FORMAT — CHINESE\nYour response must use this structure:\n[一句英文开场]\n【中文语法讲解】— explain the grammar in Chinese 大白话, at least 2-3 sentences\n（挑战/问题）— in English\n\nYou MUST include the 【中文语法讲解】section. Do not skip it.'
+
+    explanationPrefPrompt += langEnforcementSuffix
+
+    // 同时在 actionPrompt (user message) 末尾追加语言指令 — DeepSeek 对 user message 权重更高
+    if (isEnglish && (isReviewMode || isPracticeMode)) {
+      actionPrompt += langEnforcementSuffix
+    }
+
+    // 将系统提示(actionPrompt)作为隐藏指令合并到最后一条 user 消息中
     const finalUserContent = userMessage + (actionPrompt ? `\n\n[系统指令(对用户不可见)：${actionPrompt}]` : '')
 
     // --- 6. 调用 AI ---
@@ -409,7 +728,7 @@ ${conversationSoFar}
         { role: 'user', content: finalUserContent },
       ],
       imageUrls,
-      maxTokens: 400,
+      maxTokens: 800,
       temperature: 0.7,
     })
 
@@ -422,11 +741,20 @@ ${conversationSoFar}
     let taskId = ''
     let isResolved = false
     let resolvedText: string | undefined = undefined
+    let masteredWeakness: string | undefined = undefined
+
+    let showLangSelector = false
+    let cleanedAiResponse = aiResponse
+    if (isEnglish && aiResponse.includes('[CHOOSE_LANG]')) {
+      showLangSelector = true
+      cleanedAiResponse = aiResponse.replace(/\[CHOOSE_LANG\]/gi, '').trim()
+      finalAiResponse = cleanedAiResponse
+    }
 
     if (isEnglish) {
-      if (aiResponse.includes('[Normal Reply]') || aiResponse.includes('[Challenge Task]')) {
-        const normalMatch = aiResponse.match(/\[Normal Reply\]([\s\S]*?)(?=\[Challenge Task\]|$)/i)
-        const challengeMatch = aiResponse.match(/\[Challenge Task\]([\s\S]*?)$/i)
+      if (cleanedAiResponse.includes('[Normal Reply]') || cleanedAiResponse.includes('[Challenge Task]')) {
+        const normalMatch = cleanedAiResponse.match(/\[Normal Reply\]([\s\S]*?)(?=\[Challenge Task\]|$)/i)
+        const challengeMatch = cleanedAiResponse.match(/\[Challenge Task\]([\s\S]*?)$/i)
         
         const normalPart = normalMatch ? normalMatch[1].trim() : ''
         const challengePart = challengeMatch ? challengeMatch[1].trim() : ''
@@ -434,22 +762,22 @@ ${conversationSoFar}
         if (challengePart) {
           isTask = true
           challengeInstruction = challengePart
-          finalAiResponse = normalPart || aiResponse.replace(/\[Challenge Task\][\s\S]*$/i, '').replace(/\[Normal Reply\]/i, '').trim()
+          finalAiResponse = normalPart || cleanedAiResponse.replace(/\[Challenge Task\][\s\S]*$/i, '').replace(/\[Normal Reply\]/i, '').trim()
         } else {
-          finalAiResponse = aiResponse.replace(/\[Normal Reply\]/i, '').trim()
+          finalAiResponse = cleanedAiResponse.replace(/\[Normal Reply\]/i, '').trim()
         }
       } else {
         // 回退逻辑：如果 AI 没有遵循标记格式，但仍包含 challenge 特征词
-        if ((aiResponse.includes("Here's a small challenge") || aiResponse.includes("challenge for you")) && !continueChatting) {
+        if ((cleanedAiResponse.includes("Here's a small challenge") || cleanedAiResponse.includes("challenge for you")) && !continueChatting) {
           isTask = true
-          const parts = aiResponse.split(/Here's a small challenge for you:?/i)
+          const parts = cleanedAiResponse.split(/Here's a small challenge for you:?/i)
           finalAiResponse = parts[0].trim()
           challengeInstruction = parts[1] ? parts[1].trim() : 'Please complete the challenge.'
         }
       }
 
       // 检查 AI 是否判定解决了某条历史错句，并更新数据库 noted_by_user = true
-      const resolvedMatch = aiResponse.match(/\[RESOLVED:\s*([\s\S]*?)\]/i)
+      const resolvedMatch = cleanedAiResponse.match(/\[RESOLVED:\s*([\s\S]*?)\]/i)
       if (resolvedMatch) {
         const rawResolvedText = resolvedMatch[1].trim()
         const cleanResolvedText = rawResolvedText.replace(/^["'*`“]+|["'*`”]+$/g, '').trim()
@@ -470,6 +798,21 @@ ${conversationSoFar}
         }
       }
       
+      // 检查 AI 是否判定攻克了某个语法弱点（针对训练模式）
+      if (isPracticeMode) {
+        const masteredMatch = cleanedAiResponse.match(/\[MASTERED:\s*([^\]]+)\]/i)
+        if (masteredMatch) {
+          masteredWeakness = masteredMatch[1].trim()
+          const matchedItem = weaknessProfileItems.find(w =>
+            w.friendlyName === masteredWeakness || w.errorType === masteredWeakness
+          )
+          if (matchedItem) {
+            matchedItem.mastered = true
+          }
+          finalAiResponse = finalAiResponse.replace(/\[MASTERED:\s*[^\]]+\]/gi, '').trim()
+        }
+      }
+
       // 如果触发了挑战，并且用户没有选择继续自由聊天，我们将该挑战持久化到 practice_tasks 数据库中
       if (isTask && challengeInstruction) {
         taskId = uuidv4()
@@ -516,6 +859,11 @@ ${conversationSoFar}
     // --- 10. 返回 ---
     return NextResponse.json({
       success: true,
+      showLangSelector,
+      weaknessProfile: weaknessProfileItems,
+      targetErrorType: targetErrorTypeFriendly || undefined,
+      userWeaknesses: userWeaknesses.length > 0 ? userWeaknesses : undefined,
+      masteredWeakness,
       message: {
         content: finalAiResponse,
         role: 'assistant',
@@ -531,6 +879,8 @@ ${conversationSoFar}
       isAssessmentCompleted: activeIsAssessment && assistantMsgCount >= 4,
       isResolved,
       resolvedText,
+      resolvedStage: isResolved ? (targetErrorStage + 1) : undefined,
+      reviewStage: (isReviewMode && targetErrorToReview) ? (targetErrorStage + 1) : undefined,
       challengeTask: isTask && isEnglish ? {
         id: taskId,
         instruction: challengeInstruction,
@@ -544,4 +894,67 @@ ${conversationSoFar}
       { status: 500 }
     )
   }
+}
+
+function getFriendlyErrorName(type: string): string {
+  const names: Record<string, string> = {
+    'grammar-tense': '动词时态 (Tenses)',
+    'grammar-article': '冠词使用 (Articles)',
+    'grammar-preposition': '介词搭配 (Prepositions)',
+    'grammar-word-order': '语序结构 (Word Order)',
+    'grammar-agreement': '主谓一致 (Subject-Verb Agreement)',
+    'vocabulary-choice': '词汇搭配 (Word Choice)',
+    'expression-chinglish': '中式英语 (Chinglish)',
+    'expression-incomplete': '句子完整性 (Sentence Completeness)',
+  }
+  return names[type] || type || '语法词汇 (Grammar/Vocabulary)'
+}
+
+function selectTargetErrorSpacedRepetition(errors: any[]): any {
+  if (!errors || errors.length === 0) return null
+  
+  const now = new Date().getTime()
+  const scoredErrors = errors.map(err => {
+    // 1. 基础权重 (Severity)
+    let severityWeight = 50
+    if (err.severity === 'major') severityWeight = 100
+    else if (err.severity === 'moderate') severityWeight = 80
+
+    // 2. 关卡权重 (Stage 1 处于新场景迁移，优先级稍微提高以趁热打铁)
+    const isStage1 = (err.error_pattern || '').endsWith(':stage-1')
+    const stageWeight = isStage1 ? 30 : 0
+
+    // 3. 遗忘曲线时间因子 (Created Age)
+    const createdAt = new Date(err.created_at).getTime()
+    const hoursSinceCreation = (now - createdAt) / (1000 * 60 * 60)
+    
+    let timeFactor = 1.0
+    if (hoursSinceCreation < 0.2) {
+      // 12分钟内刚创造的：短期记忆中，进行冷却，降低打扰
+      timeFactor = 0.4
+    } else if (hoursSinceCreation < 24) {
+      // 12分钟-24小时内：最适合第一次复习，大幅提升权重
+      timeFactor = 1.6
+    } else if (hoursSinceCreation < 72) {
+      // 1-3天内：记忆衰退期，权重提升
+      timeFactor = 1.3
+    } else {
+      // 3天以上：更旧的错题，保持正常权重
+      timeFactor = 1.0
+    }
+
+    // 4. 最终打分 + 随机扰动 (0.8 - 1.2)，防止每次都考同一个错题导致死锁
+    const baseScore = (severityWeight + stageWeight) * timeFactor
+    const randomJitter = Math.random() * 0.4 + 0.8
+    const finalScore = baseScore * randomJitter
+
+    return {
+      error: err,
+      score: finalScore,
+    }
+  })
+
+  // 按得分从高到低排序，返回最高分者
+  scoredErrors.sort((a, b) => b.score - a.score)
+  return scoredErrors[0].error
 }

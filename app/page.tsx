@@ -313,7 +313,7 @@ export default function Home() {
 
       {/* 苹果风极简 brand header welcome area */}
       <div className="w-full text-center mt-4 mb-12 animate-fade-in">
-        <h1 className="text-4xl md:text-5xl font-black text-zinc-900 dark:text-zinc-550 tracking-widest uppercase mb-4 leading-tight">
+        <h1 className="text-4xl md:text-5xl font-black text-zinc-900 dark:text-zinc-50 tracking-widest uppercase mb-4 leading-tight">
           {hasSelectedModule && !isPhotography ? '启发 · 表达 · 语感' : '启发 · 观察 · 发现'}
         </h1>
         <p className="text-xs md:text-sm text-zinc-500 dark:text-zinc-400 max-w-xl mx-auto leading-relaxed font-medium">
@@ -429,7 +429,7 @@ export default function Home() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 relative overflow-visible">
             {/* 传统 AI 对话 (Passive Feed) */}
-            <div className="p-5 rounded-2xl border border-zinc-200/60 dark:border-zinc-850/60 bg-zinc-50/10 dark:bg-zinc-950/5 space-y-3 opacity-40 transition-opacity hover:opacity-60">
+            <div className="p-5 rounded-2xl border border-zinc-200/60 dark:border-zinc-800/60 bg-zinc-50/10 dark:bg-zinc-950/5 space-y-3 opacity-40 transition-opacity hover:opacity-60">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-sm">🔴</span>
@@ -437,16 +437,16 @@ export default function Home() {
                     传统 AI 灌输问答
                   </h4>
                 </div>
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-500 border border-zinc-250/20 dark:border-zinc-800/20">
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-500 border border-zinc-200/20 dark:border-zinc-800/20">
                   被动灌输 💤
                 </span>
               </div>
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-455 leading-relaxed font-normal">
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed font-normal">
                 {isPhotography
                   ? '直接向你灌输硬性的摄影参数与公式化的构图规则，大脑没有经历主动的画面观察与美学反思，过目即忘。'
                   : '直接向你灌输标准句子翻译与死板的语法规则，大脑没有经历主动的语意重组与口语开口，犹如死记硬背。'}
               </p>
-              <div className="p-2.5 rounded-lg bg-zinc-105/30 dark:bg-zinc-900/30 border border-zinc-200/10 dark:border-zinc-850/10 text-[10px] text-zinc-400 italic font-mono leading-relaxed">
+              <div className="p-2.5 rounded-lg bg-zinc-105/30 dark:bg-zinc-900/30 border border-zinc-200/10 dark:border-zinc-800/10 text-[10px] text-zinc-400 italic font-mono leading-relaxed">
                 {isPhotography ? 'AI: “拍美食要用逆光，设定大光圈f/2.8。”' : 'AI: “表达个人观点，这里建议使用 In my opinion。”'}
               </div>
             </div>
@@ -538,7 +538,7 @@ export default function Home() {
                     </span>
                   </div>
                   <div className="text-left">
-                    <h3 className="text-xs font-bold text-zinc-900 dark:text-zinc-550">
+                    <h3 className="text-xs font-bold text-zinc-900 dark:text-zinc-50">
                       苏格拉底对话契约已生效
                     </h3>
                     <p className="text-[10px] text-zinc-400 dark:text-zinc-500">
@@ -629,9 +629,9 @@ export default function Home() {
                           ? isPhotography 
                             ? 'bg-amber-500/[0.03] border-amber-500/25 text-amber-900 dark:text-amber-300' 
                             : 'bg-blue-500/[0.03] border-blue-500/25 text-blue-900 dark:text-blue-300'
-                          : 'bg-zinc-100/50 dark:bg-zinc-950/40 border-zinc-200/50 dark:border-zinc-800/40 text-zinc-450 dark:text-zinc-500'
+                          : 'bg-zinc-100/50 dark:bg-zinc-950/40 border-zinc-200/50 dark:border-zinc-800/40 text-zinc-400 dark:text-zinc-500'
                       }`}>
-                        <span className="font-sans font-bold text-[9px] mr-1 block text-zinc-450 dark:text-zinc-500 select-none">
+                        <span className="font-sans font-bold text-[9px] mr-1 block text-zinc-400 dark:text-zinc-500 select-none">
                           启发示例:
                         </span>
                         {s.example}
@@ -684,7 +684,7 @@ export default function Home() {
                     setActiveSessionId(null)
                     setActiveSessionTheme(null)
                   }}
-                  className="text-zinc-400 hover:text-zinc-655 dark:hover:text-zinc-350 p-1.5 rounded-lg transition-colors"
+                  className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-350 p-1.5 rounded-lg transition-colors"
                   title="忽略本次提示"
                 >
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
@@ -710,7 +710,7 @@ export default function Home() {
                     <div className="flex items-center gap-3">
                       <span className="text-2xl p-2 bg-amber-100 dark:bg-amber-955/50 rounded-xl">📷</span>
                       <div>
-                        <h3 className="font-bold text-zinc-955 dark:text-zinc-550 text-base">模式一：实操拍照探讨</h3>
+                        <h3 className="font-bold text-zinc-900 dark:text-zinc-50 text-base">模式一：实操拍照探讨</h3>
                         <p className="text-xs text-zinc-500 dark:text-zinc-400 font-semibold">从一张身边的真实照片开启学习</p>
                       </div>
                     </div>
@@ -742,7 +742,7 @@ export default function Home() {
                     <div className="flex items-center gap-3">
                       <span className="text-2xl p-2 bg-amber-100 dark:bg-amber-955/50 rounded-xl">💬</span>
                       <div>
-                        <h3 className="font-bold text-zinc-955 dark:text-zinc-550 text-base">模式二：场景探讨（免图直聊）</h3>
+                        <h3 className="font-bold text-zinc-900 dark:text-zinc-50 text-base">模式二：场景探讨（免图直聊）</h3>
                         <p className="text-xs text-zinc-500 dark:text-zinc-400 font-semibold">无图提问，针对性分析具体摄影难题</p>
                       </div>
                     </div>
@@ -758,11 +758,11 @@ export default function Home() {
                       className="w-full h-24 p-3 text-xs rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/25 resize-none transition-all duration-200"
                     />
                     <div className="space-y-2">
-                      <span className="text-[10px] font-bold text-zinc-450 dark:text-zinc-500 tracking-wider uppercase">推荐场景提问：</span>
+                      <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-wider uppercase">推荐场景提问：</span>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {quickTemplates.map((t, idx) => (
                           <button key={idx} onClick={() => { setActiveTab('text'); setCustomQuestion(t.text) }}
-                            className="text-left text-[11px] leading-snug px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-850 bg-white/50 dark:bg-zinc-900/40 hover:border-amber-500/50 dark:hover:border-amber-500/50 hover:bg-amber-500/5 hover:-translate-y-0.5 text-zinc-700 dark:text-zinc-300 hover:text-amber-700 dark:hover:text-amber-400 transition-all font-medium shadow-xs hover:shadow-sm duration-200 active:scale-98">
+                            className="text-left text-[11px] leading-snug px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/40 hover:border-amber-500/50 dark:hover:border-amber-500/50 hover:bg-amber-500/5 hover:-translate-y-0.5 text-zinc-700 dark:text-zinc-300 hover:text-amber-700 dark:hover:text-amber-400 transition-all font-medium shadow-xs hover:shadow-sm duration-200 active:scale-98">
                             {t.label}
                           </button>
                         ))}
@@ -787,12 +787,12 @@ export default function Home() {
                 <div className="flex items-center gap-3 mb-4">
                   <span className="text-2xl p-2 bg-blue-100 dark:bg-blue-955/50 rounded-xl">🗣️</span>
                   <div>
-                    <h3 className="font-bold text-zinc-955 dark:text-zinc-555 text-base">开始英语对话</h3>
+                    <h3 className="font-bold text-zinc-900 dark:text-zinc-50 text-base">开始英语对话</h3>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400 font-semibold">用英语跟我聊天——我会用提问引导你越说越多</p>
                   </div>
                 </div>
 
-                <p className="text-xs text-zinc-655 dark:text-zinc-450 leading-relaxed mb-4">
+                <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed mb-4">
                   随便输入点什么——你想聊的话题、想练习的表达，或者就说句嗨。我会通过循序渐进的启发式追问帮你自然地越说越流利。不讲枯燥的语法规则，只有真实的对话练习。
                 </p>
 
@@ -805,11 +805,11 @@ export default function Home() {
                   />
 
                   <div className="space-y-2">
-                    <span className="text-[10px] font-bold text-zinc-450 dark:text-zinc-500 tracking-wider uppercase">快速选择场景：</span>
+                    <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 tracking-wider uppercase">快速选择场景：</span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {quickTemplates.map((t, idx) => (
                         <button key={idx} onClick={() => setCustomQuestion(t.text)}
-                          className="text-left text-[11px] leading-snug px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-850 bg-white/50 dark:bg-zinc-900/40 hover:border-blue-500/50 dark:hover:border-blue-500/50 hover:bg-blue-50/50 dark:hover:bg-blue-955/20 hover:-translate-y-0.5 text-zinc-700 dark:text-zinc-300 hover:text-blue-700 dark:hover:text-blue-450 transition-all font-medium shadow-xs hover:shadow-sm duration-200 active:scale-98">
+                          className="text-left text-[11px] leading-snug px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/40 hover:border-blue-500/50 dark:hover:border-blue-500/50 hover:bg-blue-50/50 dark:hover:bg-blue-955/20 hover:-translate-y-0.5 text-zinc-700 dark:text-zinc-300 hover:text-blue-700 dark:hover:text-blue-450 transition-all font-medium shadow-xs hover:shadow-sm duration-200 active:scale-98">
                           {t.label}
                         </button>
                       ))}

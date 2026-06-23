@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState, useCallback } from 'react'
+import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { MessageList } from '@/components/chat/MessageList'
 import { AnswerInput } from '@/components/chat/AnswerInput'
@@ -51,6 +51,20 @@ function PracticeContent() {
   const [dismissedDiscoveryCount, setDismissedDiscoveryCount] = useState<number | null>(null)
   const [challengeStatus, setChallengeStatus] = useState<'idle' | 'checking' | 'correct' | 'incorrect'>('idle')
   const [challengeFeedback, setChallengeFeedback] = useState<string | null>(null)
+  const [targetErrorType, setTargetErrorType] = useState<string | null>(null)
+  const [reviewStage, setReviewStage] = useState<number | null>(null)
+  const [userWeaknesses, setUserWeaknesses] = useState<string[] | null>(null)
+  const [showLangSelector, setShowLangSelector] = useState(false)
+  const [langPrefFeedback, setLangPrefFeedback] = useState<string | null>(null)
+  const [weaknessProfile, setWeaknessProfile] = useState<Array<{
+    errorType: string
+    friendlyName: string
+    exampleSentence: string
+    mastered: boolean
+  }>>([])
+
+  // 语言偏好未设定时，暂存初始消息发送逻辑（等用户选完偏好再发）
+  const pendingInitialRef = useRef(false)
 
   // 加载会话历史
   useEffect(() => {
@@ -107,6 +121,12 @@ function PracticeContent() {
         const storeState = useSessionStore.getState()
         const currentSession = data.session || storeState.session
 
+        const isEnglishSession = currentSession?.module === 'english'
+        const isReviewOrPractice = currentSession?.theme === '全局温习' ||
+          currentSession?.theme?.startsWith('温习: ') ||
+          currentSession?.theme === '全局针对训练' ||
+          currentSession?.theme?.startsWith('针对训练: ')
+
         if (data.messages && data.messages.length > 0) {
           setMessages(data.messages)
           const currentRoundNum = currentSession?.currentRound || 1
@@ -127,6 +147,14 @@ function PracticeContent() {
         } else {
           // 防止 React Strict Mode 在开发环境下挂载两次 useEffect，导致触发两次初始消息调用
           if (useSessionStore.getState().messages.length > 0) return
+
+          // 温习/特训模式：始终在首条 AI 消息之前弹出语言偏好选择面板
+          if (isEnglishSession && isReviewOrPractice) {
+            setIsLoadingHistory(false)
+            setShowLangSelector(true)
+            pendingInitialRef.current = true
+            return
+          }
 
           // 全新会话：自动触发第一条 AI 消息
           setIsLoadingHistory(false)
@@ -158,6 +186,7 @@ function PracticeContent() {
                 roundNumber: 1,
                 module: currentSession?.module || 'photography',
                 imageUrls: storePhotos.map(p => p.imageUrl),
+                explanationPreference: typeof window !== 'undefined' ? localStorage.getItem('learniny_english_explanation_pref') : null,
               }),
             })
             const chatData = await res.json()
@@ -171,6 +200,15 @@ function PracticeContent() {
                 createdAt: new Date().toISOString(),
               })
               setPhase(chatData.phase || 'first_round')
+              if (chatData.targetErrorType) setTargetErrorType(chatData.targetErrorType)
+              if (chatData.reviewStage) setReviewStage(chatData.reviewStage)
+              if (chatData.userWeaknesses) setUserWeaknesses(chatData.userWeaknesses)
+              if (chatData.weaknessProfile && chatData.weaknessProfile.length > 0) {
+                setWeaknessProfile(chatData.weaknessProfile)
+              }
+              if (chatData.showLangSelector) {
+                setShowLangSelector(true)
+              }
             }
           } catch { /* ignore */ }
           setThinking(false)
@@ -306,6 +344,7 @@ function PracticeContent() {
           roundNumber: session?.currentRound || 1,
           imageUrls: photos.map(p => p.imageUrl),
           continueChatting,
+          explanationPreference: typeof window !== 'undefined' ? localStorage.getItem('learniny_english_explanation_pref') : null,
         }),
       })
 
@@ -313,6 +352,25 @@ function PracticeContent() {
 
       if (!data.success) {
         throw new Error(data.error || 'Chat failed')
+      }
+
+      if (data.targetErrorType) setTargetErrorType(data.targetErrorType)
+      if (data.reviewStage) setReviewStage(data.reviewStage)
+      if (data.userWeaknesses) setUserWeaknesses(data.userWeaknesses)
+      if (data.showLangSelector) setShowLangSelector(true)
+      // 弱点画像更新：初始化或标记已攻克
+      if (data.weaknessProfile && data.weaknessProfile.length > 0) {
+        if (data.masteredWeakness) {
+          setWeaknessProfile(prev =>
+            prev.map(w =>
+              w.friendlyName === data.masteredWeakness || w.errorType === data.masteredWeakness
+                ? { ...w, mastered: true }
+                : w
+            )
+          )
+        } else {
+          setWeaknessProfile(data.weaknessProfile)
+        }
       }
 
       // 添加 AI 消息
@@ -352,7 +410,13 @@ function PracticeContent() {
 
       if (data.isResolved) {
         setTimeout(() => {
-          const confirmExit = window.confirm(`🎉 恭喜！你已100%完美改写了该句子：“${data.resolvedText || ''}”。是否结束本次温习并返回进度页？`)
+          let alertMsg = `🎉 恭喜！你已100%完美改写了该句子：“${data.resolvedText || ''}”。是否结束本次温习并返回进度页？`
+          if (data.resolvedStage === 1) {
+            alertMsg = `🎉 第一关通过！你成功纠正了原句：“${data.resolvedText || ''}”。\n此错句已记入你的直觉错题本，下一次将在“全新场景”下对你发起迁移测试以确认真正掌握！\n\n是否结束本次温习并返回进度页？`
+          } else if (data.resolvedStage === 2) {
+            alertMsg = `🏆 终极攻克！你在“全新语境”下完美运用了该语法，错句：“${data.resolvedText || ''}”已彻底被你消灭，直觉内化成功！\n\n是否结束本次温习并返回进度页？`
+          }
+          const confirmExit = window.confirm(alertMsg)
           if (confirmExit) {
             handleExitSession(true)
           }
@@ -368,6 +432,84 @@ function PracticeContent() {
       setThinking(false)
     }
   }, [sessionId, isThinking, phase, questionIndex, session, photos, addMessage, setThinking, setError, setPhase, setCurrentTask, continueChatting, setContinueChatting, showChallengeBar, showAssessmentBar, handleGenerateDiscovery, handleExitSession])
+
+  const handleSelectLangPreference = useCallback((preference: 'chinese' | 'balanced' | 'english') => {
+    localStorage.setItem('learniny_english_explanation_pref', preference)
+    setShowLangSelector(false)
+
+    setLangPrefFeedback(
+      preference === 'chinese'
+        ? '✓ 解释语言已设定：中文辅助（小白友好）'
+        : preference === 'balanced'
+        ? '✓ 解释语言已设定：中英平衡（推荐）'
+        : '✓ 解释语言已设定：纯英沉浸'
+    )
+    setTimeout(() => {
+      setLangPrefFeedback(null)
+    }, 3000)
+
+    // 如果之前因为未设定语言偏好而暂缓了首条 AI 消息，现在发送
+    if (pendingInitialRef.current) {
+      pendingInitialRef.current = false
+      ;(async () => {
+        if (!sessionId) return
+        setThinking(true)
+        try {
+          const state = useSessionStore.getState()
+          const curSess = state.session
+          const isEnglish = curSess?.module === 'english'
+          const initialMsgText = searchParams.get('initialMessage') || (isEnglish ? 'Hi, I want to practice my English.' : '我想探讨一些摄影技巧')
+
+          addMessage({
+            id: `init_user_${Date.now()}`,
+            sessionId: sessionId || '',
+            role: 'user',
+            messageType: 'answer',
+            content: initialMsgText,
+            createdAt: new Date().toISOString(),
+          })
+
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId,
+              userId: curSess?.userId || '',
+              userMessage: initialMsgText,
+              phase: 'first_round',
+              questionIndex: 1,
+              roundNumber: 1,
+              module: curSess?.module || 'photography',
+              imageUrls: state.photos.map(p => p.imageUrl),
+              explanationPreference: typeof window !== 'undefined' ? localStorage.getItem('learniny_english_explanation_pref') : null,
+            }),
+          })
+          const chatData = await res.json()
+          if (chatData.success) {
+            addMessage({
+              id: `ai_first_${Date.now()}`,
+              sessionId: sessionId || '',
+              role: 'assistant',
+              messageType: 'question',
+              content: chatData.message.content,
+              createdAt: new Date().toISOString(),
+            })
+            setPhase(chatData.phase || 'first_round')
+            if (chatData.targetErrorType) setTargetErrorType(chatData.targetErrorType)
+            if (chatData.reviewStage) setReviewStage(chatData.reviewStage)
+            if (chatData.userWeaknesses) setUserWeaknesses(chatData.userWeaknesses)
+            if (chatData.weaknessProfile && chatData.weaknessProfile.length > 0) {
+              setWeaknessProfile(chatData.weaknessProfile)
+            }
+            if (chatData.showLangSelector) {
+              setShowLangSelector(true)
+            }
+          }
+        } catch { /* ignore */ }
+        setThinking(false)
+      })()
+    }
+  }, [sessionId, searchParams, addMessage, setPhase, setTargetErrorType, setUserWeaknesses, setWeaknessProfile, setShowLangSelector, setThinking])
 
   // 上传第二轮照片
   const handleReshootUpload = useCallback(async (file: File) => {
@@ -796,6 +938,70 @@ function PracticeContent() {
         </div>
       </div>
 
+      {/* 英语温习与针对强化直觉靶心指示栏 */}
+      {(isReviewMode || isPracticeMode) && (targetErrorType || (userWeaknesses && userWeaknesses.length > 0)) && (
+        <div className="px-4 py-2 bg-blue-50/50 dark:bg-blue-950/10 border-b border-zinc-200 dark:border-zinc-800/80 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-zinc-500 dark:text-zinc-400 select-none animate-fade-in">
+          {targetErrorType && (
+            <span className="flex items-center gap-1 shrink-0">
+              <span className="text-xs shrink-0">🎯</span>
+              <span className="font-bold text-zinc-400 dark:text-zinc-500">
+                {reviewStage ? `第${reviewStage}关: ` : ''}本次巩固直觉：
+              </span>
+              <span className="font-extrabold text-blue-600 dark:text-blue-400 bg-blue-100/60 dark:bg-blue-950/40 px-1.5 py-0.5 rounded-md leading-none">
+                {targetErrorType}
+              </span>
+              {reviewStage && (
+                <span className="text-[9px] text-zinc-400 dark:text-zinc-500 ml-0.5">
+                  {reviewStage === 1 ? '(原句改错)' : '(新场景迁移)'}
+                </span>
+              )}
+            </span>
+          )}
+          {userWeaknesses && userWeaknesses.length > 0 && (
+            <span className="flex items-center gap-1 truncate max-w-[220px] sm:max-w-xs md:max-w-md">
+              <span className="text-xs shrink-0">💡</span>
+              <span className="font-bold text-zinc-400 dark:text-zinc-500">我的主要语法弱点：</span>
+              <span className="font-semibold text-zinc-600 dark:text-zinc-350 truncate">
+                {userWeaknesses.join('、')}
+              </span>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* 针对性训练弱点画像悬浮面板 */}
+      {isPracticeMode && weaknessProfile.length > 0 && (
+        <div className="px-4 py-2.5 border-b border-indigo-200/40 dark:border-indigo-800/30 bg-gradient-to-r from-indigo-50/80 via-blue-50/50 to-indigo-50/80 dark:from-indigo-950/20 dark:via-blue-950/10 dark:to-indigo-950/20 backdrop-blur-sm animate-fade-in">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-extrabold text-indigo-500 dark:text-indigo-400 tracking-wide shrink-0 mr-1">
+              🎯 训练目标
+            </span>
+            {weaknessProfile.map((w, idx) => (
+              <span
+                key={w.errorType}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all duration-300 ${
+                  w.mastered
+                    ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-400 line-through opacity-70'
+                    : 'bg-white dark:bg-zinc-800 border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                }`}
+              >
+                {w.mastered ? (
+                  <span className="text-emerald-500 text-[11px]">✓</span>
+                ) : (
+                  <span className="text-[10px]">{idx + 1}.</span>
+                )}
+                <span className="max-w-[100px] truncate">{w.friendlyName}</span>
+              </span>
+            ))}
+            {weaknessProfile.every(w => w.mastered) && (
+              <span className="ml-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 animate-pulse">
+                🏆 全部攻克！
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 照片预览区 */}
       {photos.length > 0 && (
         <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/10">
@@ -1082,7 +1288,7 @@ function PracticeContent() {
                 </button>
                 <button
                   onClick={handleContinueChatFromChallenge}
-                  className="flex-1 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-750 dark:text-zinc-350 text-xs font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-all active:scale-[0.98]"
+                  className="flex-1 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-350 text-xs font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-all active:scale-[0.98]"
                 >
                   💬 继续自由聊天
                 </button>
@@ -1092,7 +1298,7 @@ function PracticeContent() {
                     setShowChallengeBar(false)
                     handleGenerateDiscovery()
                   }}
-                  className="py-2.5 px-3 rounded-xl border border-zinc-200 dark:border-zinc-850 bg-zinc-50 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 text-xs font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-all"
+                  className="py-2.5 px-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 text-xs font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-all"
                 >
                   直接看发现 🎉
                 </button>
@@ -1133,6 +1339,69 @@ function PracticeContent() {
                   💬 再聊一会儿
                 </button>
               </div>
+            </div>
+          )}
+          {/* 语言解释偏好快捷设定面板 */}
+          {showLangSelector && (
+            <div
+              className="mx-3 mb-3 mt-1 rounded-2xl border-2 border-blue-400/40 dark:border-blue-700/40 bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/40 dark:to-blue-900/20 p-4 shadow-lg shadow-blue-500/5 animate-fade-in text-left"
+              style={{ animation: 'fadeIn 0.35s ease both' }}
+            >
+              <div className="flex items-start gap-2.5 mb-3">
+                <span className="text-xl shrink-0">🎯</span>
+                <div className="flex-1">
+                  <p className="text-xs font-extrabold text-blue-800 dark:text-blue-300 leading-snug">
+                    个性化设定：选择你的讲解语言风格
+                  </p>
+                  <p className="text-[10px] text-blue-600/70 dark:text-blue-400/70 leading-relaxed mt-0.5">
+                    设定后立即生效，可随时修改。推荐「中英平衡」— 英文对话 + 疑难处中文提点：
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2.5">
+                {/* Balanced — recommended default, highlighted */}
+                <button
+                  onClick={() => handleSelectLangPreference('balanced')}
+                  className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 text-white text-xs font-bold hover:brightness-105 transition-all active:scale-[0.98] shadow-md shadow-blue-500/20 flex items-center gap-3 cursor-pointer animate-fade-in"
+                >
+                  <span className="text-lg shrink-0">⚖️</span>
+                  <div className="flex flex-col items-start gap-0.5">
+                    <span className="text-xs text-white font-bold">中英平衡 · 推荐</span>
+                    <span className="text-[9px] text-blue-200 font-medium">英文对话 + 疑难处中文提点</span>
+                  </div>
+                </button>
+                {/* Chinese-heavy — outline */}
+                <button
+                  onClick={() => handleSelectLangPreference('chinese')}
+                  className="w-full py-2.5 px-3 rounded-xl border border-blue-300/60 dark:border-blue-700/60 bg-white dark:bg-zinc-800 text-blue-700 dark:text-blue-300 text-xs font-bold hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-all active:scale-[0.98] shadow-sm flex items-center gap-3 cursor-pointer"
+                >
+                  <span className="text-lg shrink-0">🌱</span>
+                  <div className="flex flex-col items-start gap-0.5">
+                    <span className="text-xs">中文讲解为主</span>
+                    <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-medium">小白友好，大白话对比教学</span>
+                  </div>
+                </button>
+                {/* English-only — outline */}
+                <button
+                  onClick={() => handleSelectLangPreference('english')}
+                  className="w-full py-2.5 px-3 rounded-xl border border-blue-300/60 dark:border-blue-700/60 bg-white dark:bg-zinc-800 text-blue-700 dark:text-blue-300 text-xs font-bold hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-all active:scale-[0.98] shadow-sm flex items-center gap-3 cursor-pointer"
+                >
+                  <span className="text-lg shrink-0">🌍</span>
+                  <div className="flex flex-col items-start gap-0.5">
+                    <span className="text-xs">纯英沉浸</span>
+                    <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-medium">全英文环境，零中文</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+          {/* 语言解释偏好成功设定提示 */}
+          {langPrefFeedback && (
+            <div
+              className="mx-3 mb-2 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/5 border border-emerald-500/20 px-3.5 py-2 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 shadow-sm shadow-emerald-500/5"
+              style={{ animation: 'fadeIn 0.25s ease both' }}
+            >
+              <span>{langPrefFeedback}</span>
             </div>
           )}
           <AnswerInput

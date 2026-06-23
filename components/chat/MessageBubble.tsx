@@ -93,7 +93,7 @@ export function MessageBubble({ role, content, type }: MessageBubbleProps) {
         className={`max-w-[78%] px-4.5 py-3 text-sm leading-relaxed shadow-xs relative ${
           isUser
             ? 'rounded-2xl rounded-tr-sm bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950 font-normal'
-            : 'rounded-2xl rounded-tl-sm bg-amber-50/40 border border-amber-500/10 text-zinc-800 dark:bg-zinc-900/60 dark:border-zinc-850 dark:text-zinc-200'
+            : 'rounded-2xl rounded-tl-sm bg-amber-50/40 border border-amber-500/10 text-zinc-800 dark:bg-zinc-900/60 dark:border-zinc-800 dark:text-zinc-200'
         }`}
       >
         <p className="whitespace-pre-wrap">{content}</p>
