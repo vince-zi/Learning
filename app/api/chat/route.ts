@@ -94,7 +94,7 @@ let weaknessProfileItems: Array<{errorType: string, friendlyName: string, exampl
 
       const { data: nodeErrors } = await supabase
         .from('error_records')
-        .select('original_text, corrected_text, error_type, error_pattern, severity, created_at')
+        .select('id, original_text, corrected_text, error_type, error_pattern, severity, created_at')
         .eq('user_id', userId)
         .eq('noted_by_user', false)
 
@@ -108,7 +108,14 @@ let weaknessProfileItems: Array<{errorType: string, friendlyName: string, exampl
         
         // 挑选一个错题作为本次会话的主攻复习句 (使用基于遗忘曲线的间隔重复加权选题算法)
         if (isReviewMode) {
-          targetErrorToReview = selectTargetErrorSpacedRepetition(nodeErrors)
+          const specificIdMatch = sessionTheme.match(/^温习:\s*(.+)$/)
+          if (specificIdMatch && specificIdMatch[1]) {
+            const targetId = specificIdMatch[1]
+            targetErrorToReview = nodeErrors.find(e => e.id === targetId)
+          }
+          if (!targetErrorToReview) {
+            targetErrorToReview = selectTargetErrorSpacedRepetition(nodeErrors)
+          }
           const pattern = targetErrorToReview ? (targetErrorToReview.error_pattern || '') : ''
           targetErrorStage = pattern.endsWith(':stage-1') ? 1 : 0
           targetErrorTypeFriendly = targetErrorToReview ? getFriendlyErrorName(targetErrorToReview.error_type) : ''
@@ -241,7 +248,13 @@ ABSOLUTE RULES:
       }
     }
 
-    const finalSystemPrompt = systemPromptForThisRequest + styleInstruction + explanationPrefPrompt
+    let finalSystemPrompt = systemPromptForThisRequest + styleInstruction + explanationPrefPrompt
+
+    // Append CORRECTED tag instruction for all English conversations (more reliable in system prompt)
+    if (isEnglish) {
+      finalSystemPrompt += `\n\n## CORRECTED TAG (REQUIRED FOR EVERY ENGLISH RESPONSE):\nWhenever the user writes something in English — whether it contains errors or not — you MUST append "[CORRECTED: <the fully corrected version of the user's sentence>]" at the very end of your response, on its own line. This is REQUIRED for every single response. Do not skip it.`
+    }
+
     const activeKnowledgeGraph = isEnglish ? englishKnowledgeGraph : photographyKnowledgeGraph
     const defaultNodeId = isEnglish ? 'self-intro' : 'visual-focus'
 
@@ -283,26 +296,15 @@ ABSOLUTE RULES:
       ? diagnoseEnglishResponse(userMessage, sessionHistory)
       : null
 
-    // 如果诊断出英语语法/词汇错误，实时将错句持久化至数据库，供温习与针对特训使用
-    if (isEnglish && englishDiag && englishDiag.errorsInResponse.length > 0) {
-      try {
-        const errorInserts = englishDiag.errorsInResponse.map(e => {
-          const cleanText = e.originalText.replace(/^\.\.\.|\.\.\.$/g, '').trim() || userMessage
-          return {
-            user_id: userId,
-            session_id: sessionId,
-            original_text: cleanText,
-            corrected_text: e.suggestedCorrection || null,
-            error_type: e.errorType,
-            error_pattern: e.errorType,
-            severity: e.severity,
-          }
-        })
-        await supabase.from('error_records').insert(errorInserts)
-      } catch (dbErr) {
-        console.error('[Error Records Insertion Failed]:', dbErr)
-      }
-    }
+    console.log('[API Chat debug]', {
+      userMessage,
+      isEnglish,
+      hasDiag: !!englishDiag,
+      errorsCount: englishDiag?.errorsInResponse?.length || 0,
+      errors: englishDiag?.errorsInResponse
+    });
+
+    // 错误记录的持久化移至 AI 回复生成之后进行，以便保存提取的 corrected_text
 
     // --- 4. 脚手架调节 ---
     const regulation = regulate({
@@ -452,15 +454,16 @@ Ask only one challenge. Keep it encouraging.`
 
 Ask only one challenge. Keep it encouraging.${showChooseLangHint ? '\n\n⚠️ IMPORTANT: You MUST append exactly " [CHOOSE_LANG]" at the very end of your response to ask for language preference.' : ''}`
         } else {
-          const errorHintFirst = englishDiag && englishDiag.errorsInResponse.length > 0
+          const userHasEnglish = /[a-zA-Z]{3,}/.test(userMessage)
+          const errorHintFirst = userHasEnglish
             ? (isEnglishPref
-              ? `\nPotential language issues in the user's first message: ${englishDiag.errorsInResponse.map(e => e.errorType).join(', ')}. Do NOT point them out directly — use recast (implicit correction) naturally in your reply.`
+              ? `The user's message contains English. ⚠️ IMPORTANT: You MUST append exactly "[CORRECTED: <the fully corrected version of the user's sentence>]" at the very end of your response.`
               : isBalancedPref
-              ? `\nPotential language issues in user's first message: ${englishDiag.errorsInResponse.map(e => e.errorType).join(', ')}. Do NOT point them out directly. Use recast naturally in your reply. Brief Chinese hint in brackets only if the error seems confusing.`
-              : `\n用户在第一条消息中的潜在语言问题：${englishDiag.errorsInResponse.map(e => e.errorType).join(', ')}。但请不要直接指出来——在回复中自然地使用 recast（隐性纠错）。`)
+              ? `用户的发言中包含英文。⚠️ 重要：你必须在回复末尾确切地附加 "[CORRECTED: <用户句子的完整正确版本>]" 标签。`
+              : `用户在消息中使用了英文。⚠️ 重要：你必须在回复末尾确切地附加 "[CORRECTED: <用户句子的完整正确版本>]" 标签。`)
             : ''
           actionPrompt = `用户刚刚开始了英语学习对话。请你用英语和他们聊天，像朋友一样。
-目的是引导用户用英语多表达。从用户的消息出发，问一个相关的问题让他们继续说下去。
+目的引导用户用英语多表达。从用户的消息出发，问一个相关的问题让他们继续说下去。
 如果用户的消息很短，问一个开放式问题让他们展开。如果用户已经说了一些内容，追问更多细节。
 每次只问一个问题。用自然的、口语化的英语。
 如果用户的表达中有语法或词汇错误，不要直接指出来——用 recast（隐性纠错），在你的回复中自然地使用正确的形式。${errorHintFirst}`
@@ -473,13 +476,16 @@ Ask only one challenge. Keep it encouraging.${showChooseLangHint ? '\n\n⚠️ I
       }
     } else if (isEnglish) {
       // 英语模块：后续对话
-      const errorHint = englishDiag && englishDiag.errorsInResponse.length > 0
+      const correctedInstruction = /[a-zA-Z]{3,}/.test(userMessage)
+        ? `\n⚠️ IMPORTANT: You MUST append exactly "[CORRECTED: <the fully corrected version of the user's sentence>]" at the very end of your response.`
+        : ''
+      const errorHint = (englishDiag && englishDiag.errorsInResponse.length > 0
         ? (isEnglishPref
           ? `\nPotential language issues in the user's recent response: ${englishDiag.errorsInResponse.map(e => `${e.errorType}(${e.severity})`).join(', ')}. Strategy: ${englishDiag.correctionType || 'recast'}. Use recast (naturally repeat the correct form in your reply) to correct. If the same error has appeared multiple times, give a short meta-linguistic hint in English.`
           : isBalancedPref
           ? `\nPotential language issues in user's response: ${englishDiag.errorsInResponse.map(e => `${e.errorType}(${e.severity})`).join(', ')}. Strategy: ${englishDiag.correctionType || 'recast'}. Correct via recast. If error persists, add a brief Chinese hint in brackets.`
           : `\n用户在最近回答中的潜在语言问题：${englishDiag.errorsInResponse.map(e => `${e.errorType}(${e.severity})`).join(', ')}。纠正策略：${englishDiag.correctionType || 'recast'}。使用 recast（在你的回复中自然重复正确形式）来纠正。如果同一错误已出现多次，可以给一个简短的元语言提示。`)
-        : ''
+        : '') + correctedInstruction
       const levelHint = englishDiag
         ? (isEnglishPref
           ? `\nUser's estimated CEFR level: ${englishDiag.cefrEstimate}. Adjust your vocabulary and sentence complexity to match this level (i+1 principle).`
@@ -745,9 +751,21 @@ ${conversationSoFar}
 
     let showLangSelector = false
     let cleanedAiResponse = aiResponse
-    if (isEnglish && aiResponse.includes('[CHOOSE_LANG]')) {
+    let extractedCorrectedText: string | null = null
+
+    if (isEnglish) {
+      const correctedMatch = cleanedAiResponse.match(/\[CORRECTED:\s*([\s\S]*?)\]/i)
+      if (correctedMatch) {
+        extractedCorrectedText = correctedMatch[1].trim()
+        cleanedAiResponse = cleanedAiResponse.replace(/\[CORRECTED:\s*[\s\S]*?\]/gi, '').trim()
+      }
+    }
+
+    if (isEnglish && cleanedAiResponse.includes('[CHOOSE_LANG]')) {
       showLangSelector = true
-      cleanedAiResponse = aiResponse.replace(/\[CHOOSE_LANG\]/gi, '').trim()
+      cleanedAiResponse = cleanedAiResponse.replace(/\[CHOOSE_LANG\]/gi, '').trim()
+      finalAiResponse = cleanedAiResponse
+    } else {
       finalAiResponse = cleanedAiResponse
     }
 
@@ -787,12 +805,25 @@ ${conversationSoFar}
         finalAiResponse = finalAiResponse.replace(/\[RESOLVED:\s*[\s\S]*?\]/gi, '').trim()
         
         try {
-          await supabase
-            .from('error_records')
-            .update({ noted_by_user: true, corrected_text: userMessage })
-            .eq('user_id', userId)
-            .eq('original_text', cleanResolvedText)
-            .eq('noted_by_user', false)
+          if (targetErrorStage === 0) {
+            // 通过第一关：更新 error_pattern 标记
+            const currentPattern = targetErrorToReview?.error_pattern || ''
+            const newPattern = currentPattern.endsWith(':stage-1') ? currentPattern : `${currentPattern}:stage-1`
+            await supabase
+              .from('error_records')
+              .update({ error_pattern: newPattern, corrected_text: userMessage })
+              .eq('user_id', userId)
+              .eq('original_text', cleanResolvedText)
+              .eq('noted_by_user', false)
+          } else {
+            // 通过第二关：完全攻克，打上 noted_by_user 标记
+            await supabase
+              .from('error_records')
+              .update({ noted_by_user: true })
+              .eq('user_id', userId)
+              .eq('original_text', cleanResolvedText)
+              .eq('noted_by_user', false)
+          }
         } catch (dbErr) {
           console.error('[Error Resolve Failed]:', dbErr)
         }
@@ -845,6 +876,46 @@ ${conversationSoFar}
       },
     })
 
+    // --- 8.5 记录英语错误（带有提取到的 corrected_text） ---
+    if (isEnglish && englishDiag && englishDiag.errorsInResponse.length > 0) {
+      try {
+        const errorInserts = englishDiag.errorsInResponse.map(e => {
+          const cleanText = e.originalText.replace(/^\.\.\.|\.\.\.$/g, '').trim() || userMessage
+          return {
+            user_id: userId,
+            session_id: sessionId,
+            original_text: cleanText,
+            corrected_text: extractedCorrectedText || null,
+            error_type: e.errorType,
+            error_pattern: e.errorType,
+            severity: e.severity,
+          }
+        })
+        await supabase.from('error_records').insert(errorInserts)
+      } catch (dbErr) {
+        console.error('[Error Records Insertion Failed]:', dbErr)
+      }
+    } else if (isEnglish && extractedCorrectedText) {
+      // LLM detected an error (via [CORRECTED:] tag) that regex engine missed
+      const norm = (s: string) => s.replace(/[.!?，。？！…\s]+$/g, '').toLowerCase().trim()
+      if (norm(extractedCorrectedText) !== norm(userMessage)) {
+        const detected = englishDiag?.errorsInResponse?.[0]
+        try {
+          await supabase.from('error_records').insert({
+            user_id: userId,
+            session_id: sessionId,
+            original_text: userMessage,
+            corrected_text: extractedCorrectedText,
+            error_type: detected?.errorType || 'expression-chinglish',
+            error_pattern: detected?.errorType || 'expression-chinglish',
+            severity: detected?.severity || 'moderate',
+          })
+        } catch (dbErr) {
+          console.error('[Error Records LLM Fallback Failed]:', dbErr)
+        }
+      }
+    }
+
     // --- 9. 更新会话状态 ---
     await supabase
       .from('learning_sessions')
@@ -857,6 +928,9 @@ ${conversationSoFar}
       .eq('id', sessionId)
 
     // --- 10. 返回 ---
+    // 优先使用 AI 的 [CORRECTED:] 标签（LLM 比规则引擎更准确）
+    const firstDetectedError = englishDiag?.errorsInResponse?.[0] ?? null
+
     return NextResponse.json({
       success: true,
       showLangSelector,
@@ -864,6 +938,14 @@ ${conversationSoFar}
       targetErrorType: targetErrorTypeFriendly || undefined,
       userWeaknesses: userWeaknesses.length > 0 ? userWeaknesses : undefined,
       masteredWeakness,
+      // 前端纠错展示数据：correctedText 与用户原句不同（忽略尾标点）才算有错
+      detectedError: extractedCorrectedText && (() => {
+        const norm = (s: string) => s.replace(/[.!?，。？！…\s]+$/g, '').toLowerCase().trim()
+        return norm(extractedCorrectedText) !== norm(userMessage)
+      })() ? {
+        errorType: firstDetectedError?.errorType || 'expression-chinglish',
+        correctedText: extractedCorrectedText,
+      } : null,
       message: {
         content: finalAiResponse,
         role: 'assistant',

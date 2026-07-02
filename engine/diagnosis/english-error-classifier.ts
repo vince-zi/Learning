@@ -22,11 +22,19 @@ const ENGLISH_ERROR_PATTERNS: ErrorPattern[] = [
     type: 'grammar-tense',
     severity: 'moderate',
     patterns: [
-      // 过去时用现在时
-      /yesterday.*(go|come|see|do|have|make|take|get|say|know|think|find|give|tell|feel|leave|bring|begin|write|run|eat|drink|sleep|speak|read|meet|buy|fly|grow|hear|keep|pay|send|spend|stand|teach|understand|wear|win|write)\b(?!\s+(?:to|the|a|an|my|your|his|her|our|their|some|any|this|that))/i,
-      /last\s+\w+.*(go|come|see|do|have|make|take|get|say)\b(?!\s+(?:to|the|a|an))/i,
+      // yesterday / last / ago + present-tense verb (either direction)
+      /(?:yesterday|last\s+\w+|ago).*(?:go|come|see|do|have|make|take|get|say|know|think|find|give|tell|leave|bring|begin|write|run|eat|drink|sleep|speak|read|meet|buy|fly|grow|hear|keep|pay|send|spend|stand|teach|understand|wear|win)\b/i,
+      // present-tense verb within 5 words before yesterday / last / ago / this morning
+      /\b(?:go|come|see|do|have|make|take|get|say|know|think)\b(?:\s+\w+){0,6}\s+(?:yesterday|last|ago)/i,
+      // would/should/could + present tense verb (wrong: "I would go yesterday")
+      /\b(?:would|should|could|must)\s+(?:go|comes|does|has|makes|takes|gets|says|knows|thinks|wants|needs|likes)\b/i,
+      // I + present verb when past expected (standalone)
+      /\bI\s+(?:go|come|see|do|have|make|take|get|say)\b(?:\s+\w+){0,4}\s+(?:yesterday|last|ago|earlier|previously|in\s+\d{4})/i,
       // 现在完成时用过去时
-      /(since|for\s+\d+|already|yet|just|ever|never|recently).*was\b/i,
+      /(?:since|for\s+\d+|already|yet|just|ever|never|recently)\s+.*\bwas\b/i,
+      /(?:since|for\s+\d+|already|yet|just|ever|never|recently)\s+.*\b(?:went|came|saw|did|had|made|took|got|said)\b/i,
+      // past time marker + is/are (should be was/were)
+      /(?:yesterday|last|ago)\s+.*\b(?:is|are|am)\b/i,
     ],
     cefrTarget: 'B1',
     description: '时态使用不正确'
@@ -218,6 +226,7 @@ export function diagnoseEnglishResponse(
 
 /**
  * 检测英语回答中的错误
+ * 自动剥离中文字符以确保正则匹配不被打断
  */
 export function detectEnglishErrors(
   response: string,
@@ -225,24 +234,63 @@ export function detectEnglishErrors(
 ): EnglishError[] {
   const errors: EnglishError[] = []
 
-  for (const pattern of ENGLISH_ERROR_PATTERNS) {
-    for (const regex of pattern.patterns) {
-      if (regex.test(response)) {
-        // 避免重复检测同一类型的错误
-        if (!errors.some(e => e.errorType === pattern.type)) {
-          errors.push({
-            originalText: extractErrorContext(response, regex),
-            suggestedCorrection: '', // 由 LLM 在上下文中提供 recast
-            errorType: pattern.type,
-            severity: pattern.severity,
-          })
-          break // 一个类型只检测一次
-        }
+  // 1) Strip CJK for pure-English pattern matching
+  const sanitized = response.replace(/[一-鿿㐀-䶿＀-￯]/g, ' ').replace(/\s+/g, ' ').trim()
+  const hasCjk = /[一-鿿㐀-䶿＀-￯]/.test(response)
+
+  // Initial pattern check on sanitized (pure English)
+  matchPatterns(sanitized, errors)
+
+  // 2) For mixed input, also check the raw text — time words may be in Chinese
+  if (hasCjk && errors.length === 0) {
+    matchPatterns(response, errors)
+  }
+
+  // 3) Mixed input fallback: Chinese hints stripped away time clues, so flag likely-tense errors
+  if (errors.length === 0 && hasCjk && hasDetectableEnglish(response)) {
+    const englishOnly = response
+      .replace(/[一-鿿㐀-䶿＀-￯\p{P}]/gu, ' ')
+      .replace(/\s+/g, ' ').trim()
+    const words = englishOnly.split(/\s+/).filter(Boolean)
+    if (words.length >= 3) {
+      const hasBaseVerb = /\b(?:go|come|see|do|have|make|take|get|say)\b/i.test(englishOnly)
+      const hasPastVerb = /\b(?:went|came|saw|did|had|made|took|got|said|was|were)\b/i.test(englishOnly)
+      const hasAux = /\b(?:will|would|can|could|shall|should|may|might|must|am|is|are)\b/i.test(englishOnly)
+      if (hasBaseVerb && !hasPastVerb && !hasAux) {
+        errors.push({
+          originalText: response,
+          suggestedCorrection: '',
+          errorType: 'grammar-tense',
+          severity: 'moderate',
+        })
       }
     }
   }
 
   return errors
+}
+
+function matchPatterns(text: string, errors: EnglishError[]) {
+  for (const pattern of ENGLISH_ERROR_PATTERNS) {
+    for (const regex of pattern.patterns) {
+      if (regex.test(text)) {
+        if (!errors.some(e => e.errorType === pattern.type)) {
+          errors.push({
+            originalText: extractErrorContext(text, regex),
+            suggestedCorrection: '',
+            errorType: pattern.type,
+            severity: pattern.severity,
+          })
+          break
+        }
+      }
+    }
+  }
+}
+
+/** Check if text contains at least one complete English word (3+ letters) */
+function hasDetectableEnglish(text: string): boolean {
+  return /[a-zA-Z]{3,}/.test(text)
 }
 
 /**

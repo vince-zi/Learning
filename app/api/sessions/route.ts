@@ -12,7 +12,7 @@ import type { ModuleType } from '@/core/models/session'
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-        const { userId, theme, module = 'photography', questioningStyle = 'gentle', knowledgeNodeId } = body
+        const { userId, theme, module = 'english', questioningStyle = 'gentle', knowledgeNodeId } = body
 
     const moduleConfig = MODULE_CONFIG[module as ModuleType]
 
@@ -85,5 +85,32 @@ export async function POST(request: Request) {
       { error: error.message || 'Failed to create session' },
       { status: 500 }
     )
+  }
+}
+
+/** PATCH /api/sessions — mark session as completed */
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json()
+    const { sessionId } = body
+    if (!sessionId) {
+      return NextResponse.json({ error: 'sessionId required' }, { status: 400 })
+    }
+
+    const supabase = getServerClient()
+    const { error } = await supabase
+      .from('learning_sessions')
+      .update({ status: 'completed' })
+      .eq('id', sessionId)
+
+    if (error) {
+      console.error('[Sessions PATCH] Error:', error)
+      return NextResponse.json({ error: 'Failed to update session' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    console.error('[Sessions PATCH] Error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

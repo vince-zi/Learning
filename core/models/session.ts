@@ -7,7 +7,7 @@
 // --- 学习模块类型 ---
 export type ModuleType = 'photography' | 'english'
 
-export const DEFAULT_MODULE: ModuleType = 'photography'
+export const DEFAULT_MODULE: ModuleType = 'english'
 
 export const MODULE_CONFIG: Record<ModuleType, {
   name: string

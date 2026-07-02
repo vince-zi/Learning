@@ -14,7 +14,7 @@ import { v4 as uuidv4 } from 'uuid'
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { sessionId, userId, knowledgeNodeId, module = 'photography' } = body
+    const { sessionId, userId, knowledgeNodeId, module = 'english' } = body
 
     if (!sessionId) {
       return NextResponse.json({ error: 'sessionId is required' }, { status: 400 })

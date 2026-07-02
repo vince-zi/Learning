@@ -3,10 +3,10 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-export default function DiscoveryRedirect() {
+export default function ProfileRedirect() {
   const router = useRouter();
   useEffect(() => {
-    router.replace('/#discovery');
+    router.replace('/#profile');
   }, [router]);
   return null;
 }

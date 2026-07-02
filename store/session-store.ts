@@ -11,31 +11,35 @@ export interface SessionStore {
   module: ModuleType
   setModule: (module: ModuleType) => void
 
+  // --- SPA active section ---
+  activeSection: 'home' | 'practice' | 'discovery' | 'review' | 'profile'
+  setActiveSection: (section: 'home' | 'practice' | 'discovery' | 'review' | 'profile') => void
+
   // --- 会话 ---
   session: LearningSession | null
   setSession: (session: LearningSession) => void
   updateSession: (updates: Partial<LearningSession>) => void
-
+  
   // --- 照片 ---
   photos: Photo[]
   addPhoto: (photo: Photo) => void
   currentPhotoIndex: number
   setCurrentPhotoIndex: (index: number) => void
-
+  
   // --- 消息 ---
   messages: Message[]
   addMessage: (message: Message) => void
   setMessages: (messages: Message[]) => void
-
+  
   // --- 任务 ---
   currentTask: PracticeTask | null
   setCurrentTask: (task: PracticeTask) => void
   clearCurrentTask: () => void
-
+  
   // --- 发现 ---
   discoveries: Discovery[]
   addDiscovery: (discovery: Discovery) => void
-
+  
   // --- 加载状态 ---
   isThinking: boolean
   setThinking: (thinking: boolean) => void
@@ -43,18 +47,32 @@ export interface SessionStore {
   setUploading: (uploading: boolean) => void
   error: string | null
   setError: (error: string | null) => void
-
+  
   // --- 流程状态 ---
   phase: 'welcome' | 'first_round' | 'reshoot_task' | 'waiting_reshoot' | 'second_round' | 'discovery' | 'completed'
   setPhase: (phase: SessionStore['phase']) => void
+  
+  // --- 星图 3D 及选择状态 ---
+  is3DMode: boolean
+  setIs3DMode: (is3DMode: boolean) => void
+  selectedNodeId: string | null
+  setSelectedNodeId: (nodeId: string | null) => void
 
   // --- 重置 ---
   resetSession: () => void
 }
 
 export const useSessionStore = create<SessionStore>((set) => ({
-  module: 'photography',
+  activeSection: 'home',
+  setActiveSection: (activeSection) => set({ activeSection }),
+
+  module: 'english',
   setModule: (module) => set({ module }),
+
+  is3DMode: false,
+  setIs3DMode: (is3DMode) => set({ is3DMode }),
+  selectedNodeId: null,
+  setSelectedNodeId: (selectedNodeId) => set({ selectedNodeId }),
 
   session: null,
   setSession: (session) => set({ session }),

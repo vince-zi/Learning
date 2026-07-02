@@ -1,6 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { useSessionStore } from '@/store/session-store'
+import gsap from 'gsap'
+import { useGSAP } from '@gsap/react'
+
+if (typeof window !== 'undefined') {
+  gsap.registerPlugin(useGSAP)
+}
 
 interface MessageBubbleProps {
   role: 'user' | 'assistant'
@@ -11,13 +18,61 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ role, content, type }: MessageBubbleProps) {
   const isUser = role === 'user'
+  const bubbleRef = useRef<HTMLDivElement>(null)
   
   // 翻译相关的本地状态
   const [translatedText, setTranslatedText] = useState<string | null>(null)
   const [isTranslating, setIsTranslating] = useState(false)
 
-  // 检测文本中是否包含英文字符（至少包含一个3个字母及以上的单词），避免在纯中文对话（如摄影模块）中显示翻译按钮
+  // 检测文本中是否包含英文字符
   const hasEnglish = /[a-zA-Z]{3,}/.test(content)
+  
+  // 获取当前提问风格，用于决定动画
+  const questioningStyle = useSessionStore(s => s.session?.questioningStyle || 'gentle')
+
+  // GSAP 情绪化排版动画
+  useGSAP(() => {
+    if (!bubbleRef.current) return
+    
+    // 如果是用户发送的消息，使用基础弹起动画
+    if (isUser) {
+      gsap.from(bubbleRef.current, {
+        y: 20,
+        opacity: 0,
+        duration: 0.4,
+        ease: 'power2.out'
+      })
+      return
+    }
+
+    // AI 消息根据不同的“性格”展现不同的入场动画
+    if (questioningStyle === 'sharp') {
+      // 犀利思辨模式：迅速、干脆，带一点弹性冲击感
+      gsap.from(bubbleRef.current, {
+        x: -20,
+        opacity: 0,
+        duration: 0.5,
+        ease: 'back.out(1.7)'
+      })
+    } else if (questioningStyle === 'action') {
+      // 实战督导模式：具有能量感，从下往上跃出
+      gsap.from(bubbleRef.current, {
+        y: 30,
+        scale: 0.95,
+        opacity: 0,
+        duration: 0.6,
+        ease: 'elastic.out(1, 0.75)'
+      })
+    } else {
+      // 温和引导模式 (gentle)：像水波一样缓慢、温柔地浮现
+      gsap.from(bubbleRef.current, {
+        y: 10,
+        opacity: 0,
+        duration: 1.2,
+        ease: 'power2.out'
+      })
+    }
+  }, { scope: bubbleRef, dependencies: [role, questioningStyle] })
 
   const handleTranslate = async () => {
     if (translatedText) {
@@ -48,8 +103,8 @@ export function MessageBubble({ role, content, type }: MessageBubbleProps) {
   // 实践挑战卡片的渲染 (task 类型)
   if (type === 'task') {
     return (
-      <div className="mx-4 my-4 animate-fade-in">
-        <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/8 to-amber-500/[0.01] p-5 shadow-lg shadow-amber-500/[0.02] dark:border-amber-950 dark:from-amber-950/20 dark:to-transparent">
+      <div ref={bubbleRef} className="mx-4 my-4">
+        <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/8 to-amber-500/[0.01] p-5 shadow-lg shadow-amber-500/[0.02] dark:border-amber-950 dark:from-amber-950/20 dark:to-transparent backdrop-blur-md">
           <div className="flex items-center justify-between gap-2 mb-3">
             <div className="flex items-center gap-2">
               <span className="text-sm p-1.5 bg-amber-500/10 dark:bg-amber-500/20 rounded-xl">📷</span>
@@ -71,7 +126,7 @@ export function MessageBubble({ role, content, type }: MessageBubbleProps) {
 
           {/* 翻译显示区 */}
           {translatedText && (
-            <div className="mt-3 p-3 rounded-xl bg-blue-500/[0.02] border border-blue-500/10 text-[13px] text-zinc-600 dark:text-zinc-400 select-text animate-fade-in leading-relaxed">
+            <div className="mt-3 p-3 rounded-xl bg-blue-500/[0.02] border border-blue-500/10 text-[13px] text-zinc-600 dark:text-zinc-400 select-text leading-relaxed backdrop-blur-md">
               <p className="font-semibold text-[10px] text-blue-500/85 mb-1.5 select-none">任务翻译：</p>
               <p className="whitespace-pre-wrap">{translatedText}</p>
             </div>
@@ -83,17 +138,17 @@ export function MessageBubble({ role, content, type }: MessageBubbleProps) {
 
   // 正常对话泡的渲染 (user 或 assistant)
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mx-4 my-2.5 animate-fade-in`}>
+    <div ref={bubbleRef} className={`flex ${isUser ? 'justify-end' : 'justify-start'} mx-4 my-2.5`}>
       {!isUser && (
         <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-amber-600 to-amber-400 text-white text-[10px] flex items-center justify-center font-bold mr-2 mt-1 shadow-xs shrink-0 select-none">
           伴
         </div>
       )}
       <div
-        className={`max-w-[78%] px-4.5 py-3 text-sm leading-relaxed shadow-xs relative ${
+        className={`max-w-[78%] px-4.5 py-3 text-sm leading-relaxed shadow-xs relative backdrop-blur-md ${
           isUser
-            ? 'rounded-2xl rounded-tr-sm bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950 font-normal'
-            : 'rounded-2xl rounded-tl-sm bg-amber-50/40 border border-amber-500/10 text-zinc-800 dark:bg-zinc-900/60 dark:border-zinc-800 dark:text-zinc-200'
+            ? 'rounded-2xl rounded-tr-sm bg-zinc-900/80 text-white dark:bg-zinc-100/90 dark:text-zinc-950 font-normal'
+            : 'rounded-2xl rounded-tl-sm bg-amber-50/20 border border-amber-500/20 text-zinc-800 dark:bg-zinc-900/40 dark:border-zinc-800/50 dark:text-zinc-200 shadow-[0_0_15px_rgba(245,158,11,0.05)]'
         }`}
       >
         <p className="whitespace-pre-wrap">{content}</p>
@@ -114,7 +169,7 @@ export function MessageBubble({ role, content, type }: MessageBubbleProps) {
 
         {/* 翻译显示区 */}
         {translatedText && (
-          <div className="mt-2.5 p-2 rounded-xl bg-blue-500/[0.02] border border-blue-500/10 text-[13px] text-zinc-600 dark:text-zinc-400 select-text animate-fade-in leading-relaxed">
+          <div className="mt-2.5 p-2 rounded-xl bg-blue-500/[0.02] border border-blue-500/10 text-[13px] text-zinc-600 dark:text-zinc-400 select-text leading-relaxed">
             <p className="font-semibold text-[10px] text-blue-500/85 mb-1 select-none">中文翻译：</p>
             <p className="whitespace-pre-wrap">{translatedText}</p>
           </div>
