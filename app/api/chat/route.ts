@@ -252,7 +252,7 @@ ABSOLUTE RULES:
 
     // Append CORRECTED tag instruction for all English conversations (more reliable in system prompt)
     if (isEnglish) {
-      finalSystemPrompt += `\n\n## CORRECTED TAG (REQUIRED FOR EVERY ENGLISH RESPONSE):\nWhenever the user writes something in English — whether it contains errors or not — you MUST append "[CORRECTED: <the fully corrected version of the user's sentence>]" at the very end of your response, on its own line. This is REQUIRED for every single response. Do not skip it.`
+      finalSystemPrompt += `\n\n## CORRECTED + HINT TAGS (REQUIRED FOR EVERY ENGLISH RESPONSE):\nWhenever the user writes something in English:\n1. You MUST append "[CORRECTED: <the fully corrected version of the user's sentence>]" at the very end of your response.\n2. If there was ANY grammar error you corrected in your reply (even implicitly via recast), you MUST ALSO append "[HINT: <a one-sentence explanation in Chinese of WHY the correction was made, using plain everyday language and zero academic grammar terms>]" right after [CORRECTED:].\nExample: If user said "I have went" and you corrected to "went", append: "[HINT: have后面直接跟动词原形就行，不需要再把动词变成过去式]"`
     }
 
     const activeKnowledgeGraph = isEnglish ? englishKnowledgeGraph : photographyKnowledgeGraph
@@ -752,12 +752,18 @@ ${conversationSoFar}
     let showLangSelector = false
     let cleanedAiResponse = aiResponse
     let extractedCorrectedText: string | null = null
+    let extractedHintText: string | null = null
 
     if (isEnglish) {
       const correctedMatch = cleanedAiResponse.match(/\[CORRECTED:\s*([\s\S]*?)\]/i)
       if (correctedMatch) {
         extractedCorrectedText = correctedMatch[1].trim()
         cleanedAiResponse = cleanedAiResponse.replace(/\[CORRECTED:\s*[\s\S]*?\]/gi, '').trim()
+      }
+      const hintMatch = cleanedAiResponse.match(/\[HINT:\s*([\s\S]*?)\]/i)
+      if (hintMatch) {
+        extractedHintText = hintMatch[1].trim()
+        cleanedAiResponse = cleanedAiResponse.replace(/\[HINT:\s*[\s\S]*?\]/gi, '').trim()
       }
     }
 
@@ -916,6 +922,30 @@ ${conversationSoFar}
       }
     }
 
+    // --- 8.6 为错误创建星图发现记录（点亮星座节点） ---
+    const hadError = (isEnglish && englishDiag && englishDiag.errorsInResponse.length > 0) ||
+      (isEnglish && extractedCorrectedText && (() => {
+        const norm = (s: string) => s.replace(/[.!?，。？！…\s]+$/g, '').toLowerCase().trim()
+        return norm(extractedCorrectedText) !== norm(userMessage)
+      })())
+    if (hadError && activeNodeId) {
+      try {
+        const errorType = englishDiag?.errorsInResponse?.[0]?.errorType || 'expression-chinglish'
+        await supabase.from('discoveries').insert({
+          id: uuidv4(),
+          session_id: sessionId,
+          user_id: userId || 'anonymous',
+          title: `发现错误模式：${getFriendlyErrorName(errorType)}`,
+          summary: `你在"${activeNodeId}"的练习中出现了${getFriendlyErrorName(errorType)}相关的语法问题。已记录到错题本，可在「温习」页进行针对性强化。`,
+          tags: [errorType, activeNodeId],
+          source_round: round || 1,
+          knowledge_node_id: activeNodeId,
+        })
+      } catch (dbErr) {
+        console.error('[Discovery Creation Failed]:', dbErr)
+      }
+    }
+
     // --- 9. 更新会话状态 ---
     await supabase
       .from('learning_sessions')
@@ -945,6 +975,7 @@ ${conversationSoFar}
       })() ? {
         errorType: firstDetectedError?.errorType || 'expression-chinglish',
         correctedText: extractedCorrectedText,
+        hintText: extractedHintText || undefined,
       } : null,
       message: {
         content: finalAiResponse,

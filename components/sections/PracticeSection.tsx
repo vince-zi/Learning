@@ -2,19 +2,36 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Lightbulb, Languages, Sparkles, MessageSquare } from 'lucide-react';
+import { Send, Lightbulb, Languages, Sparkles, MessageSquare, CheckCircle2, Info } from 'lucide-react';
 import { useSessionStore } from '@/store/session-store';
 
 const ERROR_HINT_MAP: Record<string, { short: string; tip: string }> = {
-  'grammar-tense':       { short: '时态', tip: '注意一下时间词：说昨天发生的事，动词要用过去式哦！' },
-  'grammar-article':     { short: '冠词', tip: '在单数名词前记得加 a / an / the，比如 an apple，a car。' },
-  'grammar-preposition': { short: '介词搭配', tip: '有些动词后面固定跟某个介词，比如 interested in 不是 interested about。' },
-  'grammar-word-order':  { short: '语序', tip: '英语语序和中文不一样，疑问句需要把助动词提前，比如 Do you like...？' },
-  'grammar-agreement':   { short: '主谓一致', tip: '主语是第三人称单数时，动词要加 s，比如 She likes，不是 She like。' },
-  'vocabulary-choice':   { short: '词汇搭配', tip: '这个场景换个词会更地道，可以点下面的翻译看看 AI 是怎么说的。' },
-  'expression-chinglish':{ short: '中式英语', tip: '这句话直译中文了，英语母语者通常会换种方式说，参考 AI 的回复学一学！' },
-  'expression-incomplete':{ short: '句子不完整', tip: '这句话缺少主语或动词，补上会更清楚。' },
+  'grammar-tense':       { short: '时态', tip: '什么时候发生的事，动词就要穿什么衣服。昨天的事 → 过去式(went/did)；正在发生 → 进行时(going)；平时常做的事 → 现在式(go)。' },
+  'grammar-article':     { short: '冠词', tip: 'a/an 是"随便一个"，the 是"你我都知道的那个"。第一次提到用 a，再说时用 the。元音开头的词前面 an 更顺口，比如 an apple。' },
+  'grammar-preposition': { short: '介词搭配', tip: '介词是动词的"小尾巴"，不同动词配不同的尾巴。interested in、listen to、arrive at——这些小尾巴没有为什么，记就是了。' },
+  'grammar-word-order':  { short: '语序', tip: '疑问句要把帮助词（do/can/will）放到主语前面。Do you like... ? Can you... ? Will it... ? 就像中文里的"吗"，不过英语是放到前面。' },
+  'grammar-agreement':   { short: '主谓一致', tip: '英语动词看主人。主人是 he/she/it（第三人称单数）→ 动词加 s：She likes。主人是 I/you/we/they → 不加 s：They like。' },
+  'vocabulary-choice':   { short: '词汇搭配', tip: '同一个意思，不同场景用不同的词。多留意 AI 用什么词替换了你用的词，记多了自然就有语感。' },
+  'expression-chinglish':{ short: '中文直译', tip: '中文和英语的"说话习惯"不一样。不是每个字翻译过去就是对的。试试记住整句的表达方式，而不是拆开翻译。' },
+  'expression-incomplete':{ short: '句子要完整', tip: '英语句子必须有主语 + 动词。比如不能说 "Very good"（缺主语和动词），要说 "It is very good"。' },
 };
+
+const UNDERSTOOD_HINTS_KEY = 'learniny_understood_hints';
+
+function getUnderstoodHints(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(UNDERSTOOD_HINTS_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+
+function markHintUnderstood(errorType: string): Set<string> {
+  const current = getUnderstoodHints();
+  current.add(errorType);
+  localStorage.setItem(UNDERSTOOD_HINTS_KEY, JSON.stringify([...current]));
+  return current;
+}
 
 function DiffCard({ original, corrected, errorType }: { original: string, corrected: string, errorType?: string }) {
   const hint = errorType ? ERROR_HINT_MAP[errorType] : null;
@@ -45,6 +62,51 @@ function DiffCard({ original, corrected, errorType }: { original: string, correc
   );
 }
 
+/** Inline hint — matches prototype badge style. Uses AI-generated hint text when available. */
+function SyntaxHint({ errorType, hintText }: { errorType: string; hintText?: string }) {
+  const hint = ERROR_HINT_MAP[errorType];
+  const [dismissed, setDismissed] = useState(() => getUnderstoodHints().has(errorType));
+
+  if (dismissed) return null;
+
+  const text = hintText || hint?.tip;
+  if (!text) return null;
+
+  const handleUnderstand = () => {
+    markHintUnderstood(errorType);
+    setDismissed(true);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex flex-col gap-1.5 mb-1.5 pl-1"
+    >
+      <div className="flex items-center gap-3">
+        <div
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md w-fit text-[10px] font-mono tracking-wider"
+          style={{ background: '#6FA8B522', border: '1px solid #6FA8B544', color: '#6FA8B5' }}
+        >
+          <Info size={12} strokeWidth={2.5} />
+          <span>小提示 · {hint?.short || '语法'}</span>
+        </div>
+        <button
+          onClick={handleUnderstand}
+          className="flex items-center gap-1 text-[10px] font-mono tracking-wider transition-colors cursor-pointer"
+          style={{ color: '#6FA8B5', background: 'transparent', border: 'none' }}
+        >
+          <CheckCircle2 size={12} strokeWidth={2} />
+          懂了
+        </button>
+      </div>
+      <p className="text-[12.5px] leading-relaxed pl-0.5" style={{ color: '#8A93A6' }}>
+        {text}
+      </p>
+    </motion.div>
+  );
+}
+
 interface ExtendedMessage {
   id: string;
   sessionId: string;
@@ -55,6 +117,7 @@ interface ExtendedMessage {
   metadata?: { questionType?: string; roundNumber?: number; discoveryRef?: string; taskRef?: string };
   _errorType?: string;
   _correctedText?: string;
+  _hintText?: string;
 }
 
 function MessageBubble({ 
@@ -101,7 +164,11 @@ function MessageBubble({
       className={`flex flex-col w-full mb-6 ${isUser ? 'items-end' : 'items-start'}`}
     >
       <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[75%]`}>
-        {/* removed MetaHint — analysis moved to yellow-dot DiffCard only */}
+        {/* Syntax hint above AI bubble — hidden for now, kept for future use */}
+        {/*!TODO: re-enable when hint UX is ready */}
+        {/* {!isUser && msg._errorType && (
+          <SyntaxHint errorType={msg._errorType} hintText={msg._hintText} />
+        )} */}
 
         <div
           className={`relative px-5 py-3.5 text-[15px] leading-relaxed break-words shadow-sm
@@ -202,7 +269,7 @@ export function PracticeSection() {
   const [input, setInput] = useState('');
   const [expandedDiffId, setExpandedDiffId] = useState<string | null>(null);
   const lastUserMsgIdRef = useRef<string | null>(null);
-  const [msgExtras, setMsgExtras] = useState<Record<string, { _errorType?: string; _correctedText?: string }>>({});
+  const [msgExtras, setMsgExtras] = useState<Record<string, { _errorType?: string; _correctedText?: string; _hintText?: string }>>({});
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Retrieve last session ID from local storage on mount
@@ -258,6 +325,7 @@ export function PracticeSection() {
           const sessId = data.session.id;
           setActiveSessionId(sessId);
           localStorage.setItem('learniny_last_session_id', sessId);
+          localStorage.setItem('learniny_user_id', 'mock_user');
           setLastSessionId(sessId);
           useSessionStore.getState().setMessages([]);
         }
@@ -326,20 +394,48 @@ export function PracticeSection() {
     });
 
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: activeSessionId,
-          userId: 'mock_user',
-          userMessage: userText,
-          module: 'english',
-          roundNumber: messages.filter(m => m.role === 'user').length + 1,
+      // Run analyze + chat in parallel — analyze returns <1s for instant yellow dot
+      const [analyzeRes, chatRes] = await Promise.all([
+        fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userMessage: userText }),
         }),
-      });
+        fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: activeSessionId,
+            userId: 'mock_user',
+            userMessage: userText,
+            module: 'english',
+            roundNumber: messages.filter(m => m.role === 'user').length + 1,
+          }),
+        }),
+      ]);
 
-      if (!res.ok) throw new Error('API request failed');
-      const data = await res.json();
+      if (!chatRes.ok) throw new Error('API request failed');
+
+      // Fast analysis result — show yellow dot immediately
+      if (analyzeRes.ok) {
+        const analyzeData = await analyzeRes.json();
+        if (analyzeData.corrected && analyzeData.correctedText) {
+          setMsgExtras(prev => ({
+            ...prev,
+            [userMsgId]: {
+              _errorType: 'grammar-check',
+              _correctedText: analyzeData.correctedText,
+            },
+          }));
+        } else {
+          setMsgExtras(prev => ({
+            ...prev,
+            [userMsgId]: { _errorType: '' },
+          }));
+        }
+      }
+
+      const data = await chatRes.json();
 
       if (data.message) {
         const aiMsgId = data.message.id || `ai_${Date.now()}`;
@@ -349,21 +445,21 @@ export function PracticeSection() {
           setMsgExtras(prev => ({
             ...prev,
             [lastUserMsgIdRef.current!]: {
+              ...(prev[lastUserMsgIdRef.current!] || {}),
               _errorType: det.errorType,
-              _correctedText: det.correctedText || undefined,
+              _correctedText: det.correctedText || prev[lastUserMsgIdRef.current!]?._correctedText || undefined,
             },
             [aiMsgId]: {
               _errorType: det.errorType,
+              _hintText: det.hintText || undefined,
             },
           }));
         } else if (lastUserMsgIdRef.current) {
-          // No error detected — mark user message as correct
-          setMsgExtras(prev => ({
-            ...prev,
-            [lastUserMsgIdRef.current!]: {
-              _errorType: '',
-            },
-          }));
+          // Ensure correct messages still get their green state
+          setMsgExtras(prev => {
+            if (prev[lastUserMsgIdRef.current!]) return prev; // analyze already set it
+            return { ...prev, [lastUserMsgIdRef.current!]: { _errorType: '' } };
+          });
         }
 
         addMessage({

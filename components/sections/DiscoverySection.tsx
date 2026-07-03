@@ -18,7 +18,7 @@ export function DiscoverySection() {
   }, [activeSection, setIs3DMode]);
 
   useEffect(() => {
-    const userId = localStorage.getItem('learniny_user_id');
+    const userId = localStorage.getItem('learniny_user_id') || 'mock_user';
     if (!userId) {
       setIsLoading(false);
       return;
