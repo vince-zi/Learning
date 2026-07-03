@@ -31,7 +31,9 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
-.env*
+.env
+.env.local
+.env.*.local
 
 # vercel
 .vercel
@@ -48,8 +50,24 @@ test.pdf
 /public/uploads/*
 !.gitkeep
 
-# local IDE config
+# local IDE / AI tool config (personal preferences)
 .claude/
+.cursorrules
+.windsurfrules
+.agents/
+.hermes/
+antigravity/
+
+# runtime logs
+*.log
+nohup.out
+
+# local scratch / artifacts
+promt.md
+preview.html
+skills-lock.json
+information_architecture.html
+information_architecture.md
 
 # Local Netlify folder
 .netlify
