@@ -50,9 +50,10 @@ export async function POST(request: Request) {
     } catch (e) {
       console.error('Failed to parse AI evaluation JSON:', rawContent)
       // Fallback
+      // ⚠️ 安全修复：JSON解析失败时不能默认判定通过，改为 false 防止错题被误判为正确
       evaluationResult = {
-        passed: true,
-        feedback: "Great effort! (很棒的尝试！)"
+        passed: false,
+        feedback: "Evaluation format error, please try again. (AI评估格式异常，请重试。)"
       }
     }
 

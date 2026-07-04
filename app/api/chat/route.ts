@@ -6,7 +6,7 @@
 import { NextResponse } from 'next/server'
 import { getCachedProvider } from '@/interface/ai/provider-factory'
 import { SYSTEM_PROMPT } from '@/interface/prompts/system-prompt'
-import { ENGLISH_SYSTEM_PROMPT } from '@/interface/prompts/english-system-prompt'
+import { ENGLISH_SYSTEM_PROMPT, ENGLISH_COACHING_OVERLAY } from '@/interface/prompts/english-system-prompt'
 import { diagnose } from '@/engine/diagnosis/cognitive-diagnosis'
 import { diagnoseEnglishResponse } from '@/engine/diagnosis/english-error-classifier'
 import { regulate } from '@/engine/scaffolding/scaffold-regulator'
@@ -248,7 +248,7 @@ ABSOLUTE RULES:
       }
     }
 
-    let finalSystemPrompt = systemPromptForThisRequest + styleInstruction + explanationPrefPrompt
+    let finalSystemPrompt = systemPromptForThisRequest + (isEnglish ? ENGLISH_COACHING_OVERLAY : '') + styleInstruction + explanationPrefPrompt
 
     // Append CORRECTED tag instruction for all English conversations (more reliable in system prompt)
     if (isEnglish) {
@@ -309,9 +309,9 @@ ABSOLUTE RULES:
     // --- 4. 脚手架调节 ---
     const regulation = regulate({
       currentScaffoldLevel: 1,
-      knowledgeEstimate: diagResult.knowledgeEstimate,
+      knowledgeEstimate: englishDiag ? Math.max(0.3, (englishDiag.accuracyScore || 0) * 0.5 + (englishDiag.complexityScore || 0) * 0.5) : diagResult.knowledgeEstimate,
       bloomLevel: diagResult.bloomLevel,
-      emotionalState: diagResult.emotionalState,
+      emotionalState: englishDiag?.emotionalState || diagResult.emotionalState,
       consecutiveCorrect: diagResult.needsScaffolding ? 0 : 1,
       consecutiveErrors: diagResult.needsScaffolding ? 1 : 0,
       zpdZone: 'zpd',
@@ -720,12 +720,27 @@ ${conversationSoFar}
     }
 
     // 将系统提示(actionPrompt)作为隐藏指令合并到最后一条 user 消息中
-    const finalUserContent = userMessage + (actionPrompt ? `\n\n[系统指令(对用户不可见)：${actionPrompt}]` : '')
+    let finalUserContent = userMessage;
+
+    // --- 5.5 结构化后台上下文注入 (已安全隔离，防御提示词注入和数据泄露) ---
+    let finalSystemPromptWithContext = finalSystemPrompt;
+    if (isEnglish && englishDiag) {
+      const struct = buildCoachingContext(englishDiag, regulation, targetErrorToReview, sessionHistory, userId)
+      console.log('[COACHING_CONTEXT built]', struct)
+      // ✅ 安全加固：Context 注入 System Prompt，对用户完全不可见
+      finalSystemPromptWithContext += '\n\n## CURRENT COACHING CONTEXT (SYSTEM ONLY - HIDDEN FROM USER):\n' + struct;
+    } else if (isEnglish) {
+      console.log('[COACHING_CONTEXT skipped]', { hasEnglishDiag: !!englishDiag })
+    }
+    if (actionPrompt) {
+      // ✅ 安全加固：系统动作指令也追加至 System 层，杜绝越狱和篡改风险
+      finalSystemPromptWithContext += '\n\n## CURRENT SYSTEM ACTION INSTRUCTION (SYSTEM ONLY - HIDDEN FROM USER):\n' + actionPrompt;
+    }
 
     // --- 6. 调用 AI ---
     const provider = getCachedProvider()
     const response = await provider.chat({
-      systemPrompt: finalSystemPrompt,
+      systemPrompt: finalSystemPromptWithContext,
       messages: [
         ...sessionHistory.slice(-6).map(m => ({
           role: m.role as 'user' | 'assistant',
@@ -811,24 +826,22 @@ ${conversationSoFar}
         finalAiResponse = finalAiResponse.replace(/\[RESOLVED:\s*[\s\S]*?\]/gi, '').trim()
         
         try {
-          if (targetErrorStage === 0) {
+          if (!targetErrorToReview) {
+            console.warn('[RESOLVED] targetErrorToReview is null, skipping UPDATE')
+          } else if (targetErrorStage === 0) {
             // 通过第一关：更新 error_pattern 标记
-            const currentPattern = targetErrorToReview?.error_pattern || ''
+            const currentPattern = targetErrorToReview.error_pattern || ''
             const newPattern = currentPattern.endsWith(':stage-1') ? currentPattern : `${currentPattern}:stage-1`
             await supabase
               .from('error_records')
-              .update({ error_pattern: newPattern, corrected_text: userMessage })
-              .eq('user_id', userId)
-              .eq('original_text', cleanResolvedText)
-              .eq('noted_by_user', false)
+              .update({ error_pattern: newPattern })
+              .eq('id', targetErrorToReview.id)
           } else {
             // 通过第二关：完全攻克，打上 noted_by_user 标记
             await supabase
               .from('error_records')
               .update({ noted_by_user: true })
-              .eq('user_id', userId)
-              .eq('original_text', cleanResolvedText)
-              .eq('noted_by_user', false)
+              .eq('id', targetErrorToReview.id)
           }
         } catch (dbErr) {
           console.error('[Error Resolve Failed]:', dbErr)
@@ -895,6 +908,8 @@ ${conversationSoFar}
             error_type: e.errorType,
             error_pattern: e.errorType,
             severity: e.severity,
+            explanation: `"${cleanText}" 有个${e.errorType}类错误。正确说法是"${extractedCorrectedText || '...'}"。试着多用几次，你会自然掌握。`,
+            review_scenario: `请尝试用你在练习中学到的这个表达，向一个朋友描述一件相关的事。`,
           }
         })
         await supabase.from('error_records').insert(errorInserts)
@@ -905,16 +920,17 @@ ${conversationSoFar}
       // LLM detected an error (via [CORRECTED:] tag) that regex engine missed
       const norm = (s: string) => s.replace(/[.!?，。？！…\s]+$/g, '').toLowerCase().trim()
       if (norm(extractedCorrectedText) !== norm(userMessage)) {
-        const detected = englishDiag?.errorsInResponse?.[0]
         try {
           await supabase.from('error_records').insert({
             user_id: userId,
             session_id: sessionId,
             original_text: userMessage,
             corrected_text: extractedCorrectedText,
-            error_type: detected?.errorType || 'expression-chinglish',
-            error_pattern: detected?.errorType || 'expression-chinglish',
-            severity: detected?.severity || 'moderate',
+            error_type: 'expression-chinglish',
+            error_pattern: 'expression-chinglish',
+            severity: 'moderate',
+            explanation: `"${userMessage}" 表达不够地道。更自然的说法是"${extractedCorrectedText}"。英语母语者通常会这样说。`,
+            review_scenario: `假设你正在和一个英语母语的朋友聊天，请用修正后的表达再说一遍，试着让对话更自然。`,
           })
         } catch (dbErr) {
           console.error('[Error Records LLM Fallback Failed]:', dbErr)
@@ -1023,19 +1039,150 @@ function getFriendlyErrorName(type: string): string {
   return names[type] || type || '语法词汇 (Grammar/Vocabulary)'
 }
 
+// ============================================================
+// Structured Coaching Context Builder
+// 每轮注入到 user message 前面，供 ENGLISH_COACHING_OVERLAY 消费。
+// 字段名与 overlay 中引用的动态字段一一对应。
+// ============================================================
+function buildCoachingContext(
+  englishDiag: any,
+  regulation: any,
+  targetErrorToReview: any,
+  sessionHistory: any[],
+  userId: string,
+): string {
+  const firstError = englishDiag.errorsInResponse?.[0]
+  const hasError = firstError && englishDiag.errorsInResponse.length > 0
+  const emotional = englishDiag.emotionalState || 'neutral'
+
+  // correction_strategy
+  let correctionStrategy: string | null = null
+  if (hasError && emotional !== 'frustrated') {
+    if (englishDiag.correctionType === 'metalinguistic_hint') correctionStrategy = 'metalinguistic_hint'
+    else if (englishDiag.correctionType === 'clarification_request') correctionStrategy = 'clarification_request'
+    else correctionStrategy = 'recast'
+  }
+
+  // zpd_gap
+  let zpdGap = 'in_zone'
+  const scaffoldLevel = regulation?.newScaffoldLevel ?? 1
+  if (scaffoldLevel >= 3) zpdGap = 'hard'
+  else if (scaffoldLevel === 0 && emotional === 'confident') zpdGap = 'easy'
+
+  // context_summary – build from history weak areas
+  let contextSummary: string | null = null
+  if (targetErrorToReview) {
+    contextSummary = `用户历史错句中存在"${getFriendlyErrorName(targetErrorToReview.error_type || '')}"相关的问题，原始句子："${targetErrorToReview.original_text}"`
+  }
+
+  const ctx: any = {
+    correction_strategy: correctionStrategy,
+    emotional_signal: emotional === 'frustrated' ? 'frustrated' : (emotional === 'confused' || emotional === 'anxious') ? 'low' : 'neutral',
+    zpd_gap: zpdGap,
+    context_summary: contextSummary,
+  }
+
+  if (hasError && firstError) {
+    ctx.error_type = firstError.errorType
+    ctx.target_error = extractErrorSpan(firstError.originalText, firstError.errorType)
+    // 规则引擎算出 target_fix，不给 LLM 决定
+    ctx.target_fix = computeTargetFix(firstError)
+  }
+
+  return `[COACHING_CONTEXT]\n${JSON.stringify(ctx, null, 2)}`
+}
+
+/** 规则引擎直接计算 target_fix：模式替换，不依赖 LLM */
+function computeTargetFix(error: any): string | null {
+  const text = error.originalText || ''
+  const type: string = error.errorType || ''
+  // strip context wrappers from error.originalText
+  const clean = text.replace(/^\.\.\./, '').replace(/\.\.\.$/, '').trim()
+  const rules: Record<string, Array<{ re: RegExp; replacement: string | null }>> = {
+    'grammar-preposition': [
+      { re: /discuss\s+about/i, replacement: 'discuss' },
+      { re: /married\s+with/i, replacement: 'married to' },
+      { re: /listen\s+music/i, replacement: 'listen to music' },
+      { re: /go\s+to\s+home/i, replacement: 'go home' },
+      { re: /arrive\s+to/i, replacement: 'arrive at/in' },
+      { re: /depend\s+on\s+of/i, replacement: 'depend on' },
+    ],
+    'expression-chinglish': [
+      { re: /I\s+very\s+(like|love|hate|enjoy|want|need)/gi, replacement: 'I really $1' },
+      { re: /according\s+to\s+me/i, replacement: 'in my opinion' },
+      { re: /how\s+to\s+say/i, replacement: 'how do you say' },
+      { re: /open\s+the\s+(light|TV|computer)/gi, replacement: 'turn on the $1' },
+      { re: /close\s+the\s+(light|TV|computer)/gi, replacement: 'turn off the $1' },
+    ],
+    'grammar-tense': [
+      { re: /(?:I\s+)?go\s+to\s+.*yesterday/i, replacement: 'went (past tense)' },
+      { re: /I\s+have\s+went/i, replacement: 'I have gone' },
+      { re: /(?:yesterday|last|ago).*(?:go|come|see|do|have)\b.*/i, replacement: null },
+    ],
+    'grammar-article': [
+      { re: /\ba\s+([aeiou])/i, replacement: 'an $1' },
+      { re: /\ban\s+([^aeiou])/i, replacement: 'a $1' },
+    ],
+    'grammar-word-order': [
+      { re: /I\s+not\s+(like|know|think|want|have)/i, replacement: "I don't $1" },
+      { re: /what\s+you\s+(like|think|want|mean)/i, replacement: 'what do you $1' },
+    ],
+    'grammar-agreement': [
+      { re: /\b(he|she|it)\s+have\b/i, replacement: '$1 has' },
+      { re: /\b(he|she|it)\s+do\b/i, replacement: '$1 does' },
+    ],
+  }
+
+  const typeRules = rules[type]
+  if (typeRules) {
+    for (const rule of typeRules) {
+      if (rule.re.test(clean)) {
+        if (rule.replacement === null) return null
+        return clean.replace(rule.re, rule.replacement)
+      }
+    }
+  }
+  return null
+}
+
+/** 从错误原文中提取具体的错误片段 */
+function extractErrorSpan(text: string, errorType: string): string | null {
+  const extractors: Record<string, RegExp> = {
+    'grammar-tense': /(?:go|come|see|do|have|make|take|get|say|was|were|went|came)\b\s?\w*/i,
+    'grammar-preposition': /discuss\s+about|married\s+with|listen\s+(?:to\s+)?music|go\s+to\s+home|arrive\s+to|depend\s+on\s+of/i,
+    'grammar-article': /\b(?:a|an|the)\s+\w+/i,
+    'grammar-word-order': /I\s+not\s+\w+|what\s+you\s+\w+/i,
+    'grammar-agreement': /\b(?:he|she|it)\s+(?:have|do|go)/i,
+    'expression-chinglish': /I\s+very\s+\w+|according\s+to\s+me|how\s+to\s+say|open\s+the\s+\w+/i,
+    'vocabulary-choice': /\b(?:big)\s+\w+\b/i,
+    'expression-incomplete': /^(?:yes|no|okay|ok|maybe|sorry)\b/i,
+  }
+
+  const re = extractors[errorType]
+  if (re) {
+    const match = text.match(re)
+    return match ? match[0] : null
+  }
+  return null
+}
+
 function selectTargetErrorSpacedRepetition(errors: any[]): any {
   if (!errors || errors.length === 0) return null
-  
+
+  // 过滤已掌握的错题 (noted_by_user = true)
+  const unresolved = errors.filter(err => !err.noted_by_user)
+  if (unresolved.length === 0) return null
+
   const now = new Date().getTime()
-  const scoredErrors = errors.map(err => {
+  const scoredErrors = unresolved.map(err => {
     // 1. 基础权重 (Severity)
     let severityWeight = 50
     if (err.severity === 'major') severityWeight = 100
     else if (err.severity === 'moderate') severityWeight = 80
 
-    // 2. 关卡权重 (Stage 1 处于新场景迁移，优先级稍微提高以趁热打铁)
+    // 2. 关卡权重 (Stage 0 从未复习，优先级更高)
     const isStage1 = (err.error_pattern || '').endsWith(':stage-1')
-    const stageWeight = isStage1 ? 30 : 0
+    const stageWeight = isStage1 ? 0 : 30
 
     // 3. 遗忘曲线时间因子 (Created Age)
     const createdAt = new Date(err.created_at).getTime()

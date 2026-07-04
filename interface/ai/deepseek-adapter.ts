@@ -91,6 +91,13 @@ export const deepseekAdapter: AIProvider = {
         },
       }
     } catch (error: any) {
+      // ✅ 429 Rate Limit — 指数退避重试一次
+      if ((error as any)?.status === 429 || (error as any)?.message?.includes('rate limit')) {
+        console.warn('[DeepSeek] Rate limit hit, retrying in 2s...')
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        return this.chat(params)
+      }
+
       const errorMsg = error.message || ''
       // 如果报错是因为不支持 image_url 且确实有图片，则进行降级处理重新调用
       if (hasImages && (error.status === 400 || errorMsg.includes('image_url') || errorMsg.includes('deserializ'))) {
