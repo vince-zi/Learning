@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { ChevronRight, X, Check, Flame, BookOpen, Target, Loader2 } from "lucide-react";
 import { supabase } from '@/lib/db/supabase-client';
+import { englishKnowledgeGraph } from '@/core/knowledge-graph/english-graph';
 
 const tokens = {
   surfaceAI: "#0A0A0A",
@@ -17,6 +18,25 @@ const tokens = {
   divider: "#1A1A1A",
 };
 
+function getClueForErrorType(type: string, original: string): string {
+  const genericHints: Record<string, string> = {
+    'grammar-tense': '试试看"昨天/刚才发生的事"需要用哪种动词形式？',
+    'grammar-article': '单数可数名词前面少了点什么？',
+    'grammar-preposition': '固定搭配的介词是什么？回顾一下这个短语的完整形式。',
+    'grammar-word-order': '英语的语序和中文不太一样，试试调整词的位置。',
+    'grammar-agreement': '主语和动词要"一致"——单数主语配单数动词。',
+    'vocabulary-choice': '这个词在这种情况下不太自然，母语者会怎么说？',
+    'expression-chinglish': '试着用英文的思维方式重新组织这句话，而不是逐字翻译。',
+    'expression-incomplete': '这个句子缺少了关键成分——是主语、动词还是宾语？',
+    '时态 / 助动词': '要不要加个助动词？表示"将要"或"正在"时，需要一个帮手词。',
+    '介词搭配': '这个动词后面要跟哪个介词？回忆一下这个短语的固定搭配。',
+    '时态错误': '时间决定了动词的形式——这件事发生在过去、现在还是将来？',
+    '冠词错误': '这个名词前面要加 a/an 还是 the？可数名词不能光着身子。',
+    '中式英语': '试着用英文的语序和习惯来表达，而不是中文直译。',
+  };
+  return genericHints[type] || `"${original.slice(0, 20)}..." 这里可以改得更自然一些。`;
+}
+
 const fontImport = `
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 `;
@@ -31,8 +51,44 @@ function getFriendlyErrorName(type: string): string {
     'vocabulary-choice': '词汇搭配',
     'expression-chinglish': '中式英语',
     'expression-incomplete': '句子完整性',
+    '时态 / 助动词': '时态 / 助动词',
+    '介词搭配': '介词搭配',
+    '时态错误': '时态错误',
+    '冠词错误': '冠词错误',
+    '中式英语': '中式英语',
   };
-  return names[type] || type || '语法词汇';
+  return names[type] || type || '语法';
+}
+
+function getFriendlySeverity(severity: string): string {
+  const map: Record<string, string> = {
+    'minor': 'A2',
+    'moderate': 'B1',
+    'major': 'B2',
+  };
+  return map[severity?.toLowerCase()] || severity?.toUpperCase() || 'B1';
+}
+
+function buildFocusGroups(records: any[]) {
+  const categoryColorMap: Record<string, string> = {
+    "介词搭配": tokens.teal,
+    "代词": tokens.teal,
+    "时态错误": tokens.coral,
+    "时态 / 助动词": tokens.coral,
+    "冠词错误": tokens.gold,
+    "中式英语": tokens.teal,
+    "语法": tokens.teal,
+  };
+  const pending = records.filter((r) => r.stage < 2);
+  const grouped: Record<string, { name: string; count: number; color: string }> = {};
+  pending.forEach((r) => {
+    const key = r.category;
+    if (!grouped[key]) {
+      grouped[key] = { name: key, count: 0, color: categoryColorMap[key] || tokens.teal };
+    }
+    grouped[key].count += 1;
+  });
+  return Object.values(grouped).sort((a, b) => b.count - a.count);
 }
 
 const stageInfo = [
@@ -41,13 +97,14 @@ const stageInfo = [
   { label: "已消灭", color: tokens.gold },
 ];
 
-function ReviewModal({ record, onClose, onComplete }: { record: any, onClose: () => void, onComplete: () => void }) {
+function ReviewModal({ record, userId, onClose, onComplete }: { record: any, userId: string, onClose: () => void, onComplete: () => void }) {
   const [stage, setStage] = useState(record.stage >= 1 ? 1 : 0);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [aiFeedback, setAiFeedback] = useState('');
   const [aiTask, setAiTask] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [showClue, setShowClue] = useState(false);
 
   const stepDone = (idx: number) => stage > idx;
 
@@ -59,7 +116,7 @@ function ReviewModal({ record, onClose, onComplete }: { record: any, onClose: ()
         const res = await fetch('/api/sessions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ module: 'english', theme: '温习: ' + record.id })
+          body: JSON.stringify({ userId, module: 'english', theme: '温习: ' + record.id })
         });
         const data = await res.json();
         if (mounted && data.success) {
@@ -67,7 +124,7 @@ function ReviewModal({ record, onClose, onComplete }: { record: any, onClose: ()
           const chatRes = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: data.session.id, userMessage: 'I am ready to review.', isEnglish: true })
+            body: JSON.stringify({ sessionId: data.session.id, userId, userMessage: 'I am ready to review.', isEnglish: true })
           });
           const chatData = await chatRes.json();
           if (mounted && chatData.message?.content) {
@@ -92,7 +149,7 @@ function ReviewModal({ record, onClose, onComplete }: { record: any, onClose: ()
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, userMessage: inputValue, isEnglish: true })
+        body: JSON.stringify({ sessionId, userId, userMessage: inputValue, isEnglish: true })
       });
       const data = await res.json();
       
@@ -194,8 +251,16 @@ function ReviewModal({ record, onClose, onComplete }: { record: any, onClose: ()
 
         {stage < 2 ? (
           <>
+            {/* dialogue context — when and where the error happened */}
+            {record.dialogueContext && (
+              <div style={{ fontSize: 12, color: tokens.textSecondary, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ opacity: 0.6 }}>💬</span>
+                <span>{record.dialogueContext}</span>
+              </div>
+            )}
+
             <div style={{ fontSize: 13, color: tokens.textSecondary, marginBottom: 8 }}>
-              {stage === 0 ? "纠正这句话：" : "新场景 · 请重新造句表达相同意思："}
+              {stage === 0 ? "纠正这句话：" : "新场景 · 请用正确表达回答："}
             </div>
             <div
               style={{
@@ -209,8 +274,57 @@ function ReviewModal({ record, onClose, onComplete }: { record: any, onClose: ()
                 lineHeight: 1.5,
               }}
             >
-              {stage === 0 ? record.original : (aiTask || "加载新场景中...")}
+              {stage === 0 ? record.original : (record.reviewScenario || aiTask || "加载新场景中...")}
             </div>
+
+            {/* first-round inline grammar explanation */}
+            {stage === 0 && record.explanation && (
+              <div
+                style={{
+                  background: tokens.tealSoft,
+                  border: `1px solid ${tokens.teal}33`,
+                  borderRadius: 8, padding: "10px 12px", marginBottom: 14,
+                  fontSize: 12, color: tokens.textSecondary, lineHeight: 1.6,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>
+                    <span style={{ color: tokens.teal, fontWeight: 600, marginRight: 4 }}>语法提示</span>
+                    {record.explanation}
+                  </span>
+                  <button
+                    onClick={() => setShowClue(!showClue)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: tokens.gold,
+                      fontSize: 11,
+                      fontFamily: 'Inter, sans-serif',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      marginLeft: 8,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {showClue ? '收起线索' : '💡 获取线索'}
+                  </button>
+                </div>
+                {showClue && (
+                  <div style={{
+                    marginTop: 8,
+                    padding: '8px 10px',
+                    background: tokens.goldSoft,
+                    borderRadius: 6,
+                    color: tokens.textPrimary,
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                  }}>
+                    💡 {getClueForErrorType(record.category, record.original)}
+                  </div>
+                )}
+              </div>
+            )}
 
             {aiFeedback && (
               <div style={{
@@ -228,12 +342,13 @@ function ReviewModal({ record, onClose, onComplete }: { record: any, onClose: ()
               </div>
             )}
 
-            <input
+            <textarea
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
               placeholder="输入你的答案..."
               disabled={isLoading || !sessionId}
-              onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
+              rows={3}
               style={{
                 width: "100%",
                 background: "transparent",
@@ -244,6 +359,9 @@ function ReviewModal({ record, onClose, onComplete }: { record: any, onClose: ()
                 color: tokens.textPrimary,
                 fontSize: 14,
                 outline: 'none',
+                resize: 'none',
+                fontFamily: 'Inter, sans-serif',
+                lineHeight: 1.5,
               }}
             />
             <button
@@ -353,7 +471,7 @@ function ErrorCard({ record, onReview }: { record: any, onReview: () => void }) 
               color: tokens.gold,
             }}
           >
-            {record.severity}
+            {record.cefrLevel}
           </span>
         </div>
         <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: tokens.textSecondary }}>
@@ -367,6 +485,13 @@ function ErrorCard({ record, onReview }: { record: any, onReview: () => void }) 
       <div style={{ fontSize: 14, color: tokens.textPrimary, marginBottom: 12 }}>
         {record.fixed}
       </div>
+
+      {/* explanation */}
+      {record.explanation && (
+        <div style={{ fontSize: 12, color: tokens.textSecondary, lineHeight: 1.55, marginBottom: 12, borderLeft: `2px solid ${tokens.divider}`, paddingLeft: 8 }}>
+          {record.explanation}
+        </div>
+      )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ fontSize: 11, color: info.color, fontFamily: "'JetBrains Mono', monospace" }}>
@@ -402,35 +527,56 @@ export function ReviewSection() {
   const [records, setRecords] = useState<any[]>([]);
 
   const handleStartFocusTraining = (categoryName: string) => {
-    const keywordMap: Record<string, string> = {
-      '介词专题': '介词',
-      '时态专题': '时态',
-      '冠词专题': '冠词',
-    };
-    const keyword = keywordMap[categoryName] || categoryName;
-    const match = records.find(r => r.category.includes(keyword) && r.stage < 2);
+    const match = records.find(r => r.category === categoryName && r.stage < 2);
     if (match) {
       setReviewing(match);
     }
   };
 
   const fetchRecords = async () => {
-    const { data } = await supabase.from('error_records').select('*').order('created_at', { ascending: false });
+    const userId = localStorage.getItem('learniny_user_id') || 'mock_user';
+    const { data } = await supabase.from('error_records').select('*').eq('user_id', userId).order('created_at', { ascending: false });
     if (data) {
+      // batch-fetch sessions to get context (topic names / theme)
+      const sessionIds = [...new Set(data.map(d => d.session_id).filter(Boolean))] as string[];
+      let sessionMap: Record<string, any> = {};
+      if (sessionIds.length > 0) {
+        const { data: sessions } = await supabase.from('learning_sessions').select('id, theme, current_knowledge_node_id').in('id', sessionIds);
+        if (sessions) {
+          sessionMap = Object.fromEntries(sessions.map(s => [s.id, s]));
+        }
+      }
+
       const mapped = data.map(d => {
         const stageNum = d.noted_by_user ? 2 : (d.error_pattern?.endsWith(':stage-1') ? 1 : 0);
         const diffTime = Math.abs(new Date().getTime() - new Date(d.created_at).getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        const dateStr = diffDays === 1 ? '今天' : diffDays === 2 ? '昨天' : `${diffDays} 天前`;
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        const dateStr = diffDays === 0 ? '今天' : diffDays === 1 ? '昨天' : `${diffDays} 天前`;
+
+        // build dialogue context from session data
+        let dialogueContext = '';
+        const sess = d.session_id ? sessionMap[d.session_id] : null;
+        if (sess) {
+          const nodeId = sess.current_knowledge_node_id;
+          const nodeName = nodeId ? englishKnowledgeGraph.nodes.get(nodeId)?.name : '';
+          dialogueContext = nodeName
+            ? `你在「${nodeName}」中说错了这句话 · ${dateStr}`
+            : `${dateStr}的对话中说错了这句话`;
+        } else {
+          dialogueContext = dateStr ? `在${dateStr}的对话中说错了这句话` : '';
+        }
 
         return {
           id: d.id,
           original: d.original_text,
           fixed: d.corrected_text || '待 AI 修正...',
-          category: getFriendlyErrorName(d.error_type),
-          severity: d.severity?.toUpperCase() || 'B1',
+          category: getFriendlyErrorName(d.error_type || 'grammar'),
+          cefrLevel: getFriendlySeverity(d.severity),
+          explanation: d.explanation || null,
+          reviewScenario: d.review_scenario || null,
           stage: stageNum,
           date: dateStr,
+          dialogueContext,
         };
       });
       setRecords(mapped);
@@ -444,11 +590,7 @@ export function ReviewSection() {
   const pendingCount = records.filter((r) => r.stage < 2).length;
   const clearedThisWeek = records.filter((r) => r.stage === 2).length;
 
-  const focusGroups = [
-    { name: "介词专题", count: records.filter(r => r.category.includes('介词') && r.stage < 2).length, color: tokens.teal },
-    { name: "时态专题", count: records.filter(r => r.category.includes('时态') && r.stage < 2).length, color: tokens.coral },
-    { name: "冠词专题", count: records.filter(r => r.category.includes('冠词') && r.stage < 2).length, color: tokens.gold },
-  ].filter(g => g.count > 0);
+  const focusGroups = buildFocusGroups(records);
 
   return (
     <div className="w-full h-full flex flex-col justify-center pt-24 pb-20 px-6 md:px-12 pointer-events-auto">
@@ -586,7 +728,7 @@ export function ReviewSection() {
           )}
         </div>
 
-        {reviewing && <ReviewModal record={reviewing} onClose={() => setReviewing(null)} onComplete={fetchRecords} />}
+        {reviewing && <ReviewModal record={reviewing} userId={localStorage.getItem('learniny_user_id') || 'mock_user'} onClose={() => setReviewing(null)} onComplete={fetchRecords} />}
       </div>
     </div>
   );
