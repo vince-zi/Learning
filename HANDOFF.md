@@ -103,3 +103,17 @@ start (400ms delay)
 | 2026-07-02 | Antigravity | [星图交互与概念脑图重构] 1. 将星图2D树状图重构为与数据库真实的“自我介绍”、“兴趣情感”等英语节点完全同步的星盘星座； 2. 实现点击节点联动筛选右侧历史剖析卡片； 3. 对面板与卡片应用 bg-surface-card/80 backdrop-blur-xl，彻底隔离粒子重叠背景。 | npm run build 编译打包全部通过 |
 | 2026-07-02 | Antigravity | [3D星云探索与拖拽缩放] 1. 状态库接入 is3DMode 与 selectedNodeId； 2. 3D 探索模式下动态开启 Canvas 的 pointer-events-auto，从底层解决 Canvas 无法拖拽、滚动缩放的 Bug； 3. 3D 网格升级为真实英语知识星座节点，配合 drei 的 Html 挂载发光 3D 悬浮文字标签，点击 3D 节点直接同步筛选前台数据。 | npm run build 编译打包全部通过 |
 | 2026-07-03 | Claude Code | [错题本功能修复] 1. ReviewSection 添加 user_id 过滤（修复越权数据泄露）；2. 修复日期 Math.ceil→Math.floor（1h前误显示1天前）；3. ReviewModal 传递 userId 到 /api/sessions 和 /api/chat；4. RESOLVED handler: 移除 corrected_text 错误覆写、添加 .eq('id',...) 主键过滤防止跨记录影响、空 targetErrorToReview 守卫；5. 间隔重复选题器：过滤已掌握错题、反转 Stage 优先级（Stage0 未复习 > Stage1 已复习）；6. 移除 LLM fallback 错误插入中的死代码 | npx tsc --noEmit 0 errors, npm run build 18/18 routes |
+| 2026-07-04 | Antigravity | [温习提交静止问题修复] 1. 优化 RESOLVED 正则提升容错；2. 整合 RESOLVED 与全局标签提示防冲突；3. 增加并抛出 DB 更新错误；4. 本地集成测试与编译 100% 通过。 | 修复完成，集成测试与编译通过 |
+| 2026-07-04 | Antigravity | [温习体验与指令冲突修复] 1. 落地红绿视觉强对比反馈；2. 增加 React Key 切换强力清空 textarea 缓存；3. 将 RESOLVED 标签整合至输出格式以防大模型忽略，恢复第二关新场景生成；4. 本地集成测试与编译 100% 通过。 | 体验优化与指令修复完成，测试成功 |
+| 2026-07-04 | Antigravity | [温息与对话闭环及星图点亮打通] 1. 发现并修复全站没有请求 `/api/discoveries` 接口的重大缺失，在前端「结束对话」时先发送 POST `/api/discoveries` 生成卡片与画像评估，再 PATCH 归档会话；2. 优化「结束对话」按钮体验，加入 Loading 锁定防止重复点击；3. 对话 ZPD CEFR 等级评估引入对 discoveries 历史节点的全局追踪；4. 本地 build 100% 通过。 | 彻底打通对话结束后自动评估生成与星图节点点亮闭环，构建成功 |
+| 2026-07-05 | Antigravity | [英语学习画像报告与真实数据接入] 1. 接入 english_learner_profiles、error_records 和 learning_sessions 的 Supabase 真实数据查询，重构 ProfileSection.tsx 实现动态统计天数、词汇和评级；2. 新增毛玻璃智能画像报告大卡片并提供一键复制功能；3. npx tsc 类型校验无误。 | npx tsc --noEmit 通过 |
+| 2026-07-05 | Antigravity | [英语学习画像极简报告接入] 1. 接入 english_learner_profiles、error_records 和 learning_sessions 的 Supabase 真实数据查询，重构 ProfileSection.tsx 实现动态统计天数、词汇和评级；2. 新增纯净版“学习画像报告”卡片（CEFR等级+本周练习语法点+薄弱环节）和一键复制功能；3. npx tsc 类型校验无误。 | npx tsc --noEmit 通过 |
+| 2026-07-05 | Antigravity | [能力指标逻辑修正与项目瘦身] 1. 物理清理垃圾备份与开发日志；2. 模型默认值升级为 v4flash；3. 替换 ProfileSection.tsx 中虚假无依据的“发音”为真实的“表达流利度”；4. 修复“词汇深度”逻辑穿帮，补全“我的强项 / Strengths”卡片展现；5. tsc 校验无误。 | npx tsc --noEmit 通过 |
+
+
+
+
+
+
+
+

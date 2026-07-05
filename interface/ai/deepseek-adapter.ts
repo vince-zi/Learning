@@ -18,7 +18,7 @@ function getBaseURL(): string {
 }
 
 function getModel(): string {
-  return process.env.DEEPSEEK_MODEL || 'deepseek-chat'
+  return process.env.DEEPSEEK_MODEL || 'v4flash'
 }
 
 async function getClient() {

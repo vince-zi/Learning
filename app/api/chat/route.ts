@@ -74,16 +74,46 @@ export async function POST(request: Request) {
     let targetErrorStage = 0
     let targetErrorTypeFriendly = ''
     let userWeaknesses: string[] = []
-let practiceWeaknessProfile = ''
-let weaknessProfileItems: Array<{errorType: string, friendlyName: string, exampleSentence: string, mastered: boolean}> = []
+    let practiceWeaknessProfile = ''
+    let weaknessProfileItems: Array<{errorType: string, friendlyName: string, exampleSentence: string, mastered: boolean}> = []
+    let globalNodeErrors: any[] = []
+    let globalNodeDiscoveries: any[] = []
+    let lastSessionTopicHint = ''
 
-    if (isEnglish && (isReviewMode || isPracticeMode)) {
-      showChooseLangHint = !explanationPreference && !continueChatting
-      const isGlobal = sessionTheme === '全局温习' || sessionTheme === '全局针对训练'
+    if (isEnglish && !isAssessment) {
+      showChooseLangHint = !explanationPreference && !continueChatting && (isReviewMode || isPracticeMode)
+      const isGlobal = sessionTheme === '全局温习' || sessionTheme === '全局针对训练' || sessionTheme === 'Free Conversation'
       
+      // 获取用户上一个已归档会话的主题或开场白，防重复
+      try {
+        const { data: lastSessions } = await supabase
+          .from('learning_sessions')
+          .select('id, theme, created_at')
+          .eq('user_id', userId)
+          .eq('module', 'english')
+          .order('created_at', { ascending: false })
+          .limit(2)
+        
+        if (lastSessions && lastSessions.length > 1) {
+          const prevSession = lastSessions[1]
+          const { data: prevMessages } = await supabase
+            .from('messages')
+            .select('content')
+            .eq('session_id', prevSession.id)
+            .eq('role', 'assistant')
+            .order('created_at', { ascending: true })
+            .limit(2)
+          if (prevMessages && prevMessages.length > 0) {
+            lastSessionTopicHint = prevMessages.map(m => m.content).join(' ')
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to query last session topic:', err)
+      }
+
       let discoveriesQuery = supabase
         .from('discoveries')
-        .select('title, summary')
+        .select('title, summary, knowledge_node_id')
         .eq('user_id', userId)
       
       if (!isGlobal) {
@@ -91,12 +121,24 @@ let weaknessProfileItems: Array<{errorType: string, friendlyName: string, exampl
       }
       
       const { data: nodeDiscoveries } = await discoveriesQuery.limit(isGlobal ? 10 : 3)
+      
+      if (nodeDiscoveries) {
+        globalNodeDiscoveries = nodeDiscoveries
+      }
 
       const { data: nodeErrors } = await supabase
         .from('error_records')
         .select('id, original_text, corrected_text, error_type, error_pattern, severity, created_at')
         .eq('user_id', userId)
         .eq('noted_by_user', false)
+      
+      if (nodeErrors) {
+        globalNodeErrors = nodeErrors
+      }
+
+      if (lastSessionTopicHint) {
+        userContextPrompt += `\n[User's Last Chat Topic / Assistant Opening]: ${lastSessionTopicHint}\n`
+      }
 
       if (nodeDiscoveries && nodeDiscoveries.length > 0) {
         userContextPrompt += `\n[User's Past Discoveries]:\n` + 
@@ -252,7 +294,11 @@ ABSOLUTE RULES:
 
     // Append CORRECTED tag instruction for all English conversations (more reliable in system prompt)
     if (isEnglish) {
-      finalSystemPrompt += `\n\n## CORRECTED + HINT TAGS (REQUIRED FOR EVERY ENGLISH RESPONSE):\nWhenever the user writes something in English:\n1. You MUST append "[CORRECTED: <the fully corrected version of the user's sentence>]" at the very end of your response.\n2. If there was ANY grammar error you corrected in your reply (even implicitly via recast), you MUST ALSO append "[HINT: <a one-sentence explanation in Chinese of WHY the correction was made, using plain everyday language and zero academic grammar terms>]" right after [CORRECTED:].\nExample: If user said "I have went" and you corrected to "went", append: "[HINT: have后面直接跟动词原形就行，不需要再把动词变成过去式]"`
+      let tagsPrompt = `\n\n## CORRECTED + HINT TAGS (REQUIRED FOR EVERY ENGLISH RESPONSE):\nWhenever the user writes something in English:\n1. You MUST append "[CORRECTED: <the fully corrected version of the user's sentence>]" at the end of your response.\n2. If there was ANY grammar error you corrected in your reply (even implicitly via recast), you MUST ALSO append "[HINT: <a one-sentence explanation in Chinese of WHY the correction was made, using plain everyday language and zero academic grammar terms>]" right after [CORRECTED:].\nExample: If user said "I have went" and you corrected to "went", append: "[HINT: have后面直接跟动词原形就行，不需要再把动词变成过去式]"`
+      if (isReviewMode) {
+        tagsPrompt += `\n3. [CRITICAL FOR REVIEW MODE] If you determine the user has successfully resolved/corrected the error (Stage 1) or correctly applied the rule under the new scenario (Stage 2), you MUST ALSO append "[RESOLVED: ${targetErrorToReview ? targetErrorToReview.original_text : ''}]" at the very end of your response (after [HINT:]). This is mandatory to advance their progress.`
+      }
+      finalSystemPrompt += tagsPrompt
     }
 
     const activeKnowledgeGraph = isEnglish ? englishKnowledgeGraph : photographyKnowledgeGraph
@@ -279,24 +325,34 @@ ABSOLUTE RULES:
       createdAt: m.created_at,
     }))
 
+    let isInitSignal = false
+    let processedUserMessage = userMessage
+    if (userMessage === '[INIT_FREE_CONVERSATION]') {
+      isInitSignal = true
+      processedUserMessage = 'Hi!'
+    }
+
     // --- 2. 记录用户消息 ---
-    await supabase.from('messages').insert({
-      session_id: sessionId,
-      role: 'user',
-      message_type: 'answer',
-      content: userMessage,
-      round_number: roundNumber || 1,
-    })
+    if (!isInitSignal) {
+      await supabase.from('messages').insert({
+        session_id: sessionId,
+        role: 'user',
+        message_type: 'answer',
+        content: processedUserMessage,
+        round_number: roundNumber || 1,
+      })
+    }
 
     // --- 3. 引擎层诊断（根据模块选择不同的诊断逻辑）---
-    const diagResult = diagnose(userMessage, sessionHistory, 3)
+    const diagResult = diagnose(processedUserMessage, sessionHistory, 3)
 
     // 英语模块：额外的英语错误诊断
-    const englishDiag = isEnglish
-      ? diagnoseEnglishResponse(userMessage, sessionHistory)
+    const englishDiag = isEnglish && !isInitSignal
+      ? diagnoseEnglishResponse(processedUserMessage, sessionHistory)
       : null
 
     console.log('[API Chat debug]', {
+      processedUserMessage,
       userMessage,
       isEnglish,
       hasDiag: !!englishDiag,
@@ -454,7 +510,7 @@ Ask only one challenge. Keep it encouraging.`
 
 Ask only one challenge. Keep it encouraging.${showChooseLangHint ? '\n\n⚠️ IMPORTANT: You MUST append exactly " [CHOOSE_LANG]" at the very end of your response to ask for language preference.' : ''}`
         } else {
-          const userHasEnglish = /[a-zA-Z]{3,}/.test(userMessage)
+          const userHasEnglish = /[a-zA-Z]{3,}/.test(processedUserMessage)
           const errorHintFirst = userHasEnglish
             ? (isEnglishPref
               ? `The user's message contains English. ⚠️ IMPORTANT: You MUST append exactly "[CORRECTED: <the fully corrected version of the user's sentence>]" at the very end of your response.`
@@ -462,11 +518,79 @@ Ask only one challenge. Keep it encouraging.${showChooseLangHint ? '\n\n⚠️ I
               ? `用户的发言中包含英文。⚠️ 重要：你必须在回复末尾确切地附加 "[CORRECTED: <用户句子的完整正确版本>]" 标签。`
               : `用户在消息中使用了英文。⚠️ 重要：你必须在回复末尾确切地附加 "[CORRECTED: <用户句子的完整正确版本>]" 标签。`)
             : ''
+
+          const isSimpleGreeting = processedUserMessage.split(/\s+/).length < 5 && !processedUserMessage.includes('?')
+
+          let determinedLevel: 'A1-A2' | 'B1-B2' | 'C1-C2' = 'A1-A2'
+          if (globalNodeErrors && globalNodeErrors.length > 0) {
+            const hasComplexErrors = globalNodeErrors.some(e => 
+              e.error_type === 'clause-error' || 
+              e.error_type === 'preposition-collocation' || 
+              e.error_type === 'vocabulary-misuse'
+            )
+            if (globalNodeErrors.length > 8 || hasComplexErrors) {
+              determinedLevel = 'B1-B2'
+            }
+            const hasAdvancedErrors = globalNodeErrors.some(e => e.severity === 'advanced' || e.error_type === 'style-register')
+            if (hasAdvancedErrors) {
+              determinedLevel = 'C1-C2'
+            }
+          }
+
+          if (globalNodeDiscoveries && globalNodeDiscoveries.length > 0) {
+            const hasMidNode = globalNodeDiscoveries.some(d => 
+              d.knowledge_node_id === 'opinion-expression' || 
+              d.knowledge_node_id === 'comparing-discussing' || 
+              d.knowledge_node_id === 'storytelling'
+            )
+            const hasHighNode = globalNodeDiscoveries.some(d => d.knowledge_node_id === 'abstract-thinking')
+            if (hasHighNode) {
+              determinedLevel = 'C1-C2'
+            } else if (hasMidNode && determinedLevel === 'A1-A2') {
+              determinedLevel = 'B1-B2'
+            }
+          }
+
+          let levelPrompt = ''
+          if (determinedLevel === 'A1-A2') {
+            levelPrompt = `【⚠️ 核心指令 - 用户当前级别：🌟 初级/入门者 (A1-A2)】
+用户目前处于零基础或初学者水平。这极度重要，请你必须强制遵循以下规则：
+1. 话题限定：必须且只能在以下 6 个最简单的日常生活化场景中选择一个发起提问：
+   - Yesterday & Weekend (昨天或周末去了哪里)
+   - Food & Drinks (今天吃了什么、喜欢喝牛奶/咖啡等)
+   - Daily Routine (什么时候起床/睡觉)
+   - Today's Weather (今天天气好不好)
+   - Sports & Music (简单运动或音乐爱好)
+   - Simple Self-Intro (名字和简单打招呼)
+2. 词汇与句式硬约束（钢印约束）：
+   - 只能使用初学者最熟悉的极简基础生活单词（封顶 CEFR A2 词汇）。
+   - 绝对禁止使用任何如 "programming", "software", "article", "languages differently", "special tricks" 等稍微复杂或中高阶的抽象、科技、专业词汇！
+   - 句子长度控制在 1-2 句极其简单的日常口语内。
+   - 示范：*"Hi there! I had milk and bread for breakfast today. What did you eat for breakfast?"*
+3. 隐性特训：在提问中悄悄带入他们错过的语法（如过去时 went）。例如：“Hi! I went to a nice park yesterday. Did you go anywhere yesterday?”`
+          } else if (determinedLevel === 'B1-B2') {
+            levelPrompt = `【⚠️ 核心指令 - 用户当前级别：📘 中级/四六级 (B1-B2)】
+用户处于中等水平（四六级水平）。请遵循以下规则：
+1. 话题限定：可以讨论“个人学习英语的方法与心得、最近看过的英美剧/电影、城市生活与旅游经历、工作或学习中的小挑战、你对自学英语软件有什么看法”。
+2. 词汇与句式约束：可以使用 CET-4/6 核心词汇，可以使用一些稍微抽象但常用的词，但依然避免程序员或特定行业的极度专业黑话。
+3. 示范：*"Hi! I've been looking for some good TV shows to improve my English listening. Have you watched anything interesting lately?"*`
+          } else {
+            levelPrompt = `【⚠️ 核心指令 - 用户当前级别：🎓 高级/雅思托福 (C1-C2)】
+用户处于高阶思辩水平（雅思托福）。请遵循以下规则：
+1. 话题限定：讨论雅思口语/写作 Part 2-3 的经典话题，如“科技进步对社交的影响、环境保护与个人选择、人工智能的伦理挑战”。
+2. 词汇与句式要求：使用雅思/托福核心词汇，可以有深度、逻辑性地使用高级学术词汇和思辩性句式。
+3. 示范：*"Hello! I was just reading an article discussing how digital connectivity affects our real-life relationships. Do you agree that social media is making us more isolated?"*`
+          }
+
+          const memoryBasedTopicPrompt = (isSimpleGreeting && userContextPrompt)
+            ? `\n\n${levelPrompt}${lastSessionTopicHint ? `\n\n【⚠️ 避坑指南 - 绝对禁止重复上一个话题】：\n用户在刚刚结束的上一个对话里，已经和你聊过以下话题或开场白：\n"${lastSessionTopicHint}"\n请你绝对不要在本次首发破冰中再次提及或触碰类似的主题（比如上局刚问了咖啡/饮品/食物/早餐等，这一局就必须严禁聊任何与食物饮品有关的内容，强制选择昨日经历、今日天气、起居规律等其他完全不同的话题）！` : ''}\n\n请你极其严格地扮演符合该等级能力的英语对话伙伴，每次只问一个问题。`
+            : ''
+
           actionPrompt = `用户刚刚开始了英语学习对话。请你用英语和他们聊天，像朋友一样。
 目的引导用户用英语多表达。从用户的消息出发，问一个相关的问题让他们继续说下去。
 如果用户的消息很短，问一个开放式问题让他们展开。如果用户已经说了一些内容，追问更多细节。
 每次只问一个问题。用自然的、口语化的英语。
-如果用户的表达中有语法或词汇错误，不要直接指出来——用 recast（隐性纠错），在你的回复中自然地使用正确的形式。${errorHintFirst}`
+如果用户的表达中有语法或词汇错误，不要直接指出来——用 recast（隐性纠错），在你的回复中自然地使用正确的形式。${errorHintFirst}${memoryBasedTopicPrompt}`
         }
       } else {
         // 第一条消息：摄影模式-无图片，直接提问进行话题讨论
@@ -503,22 +627,38 @@ Ask only one challenge. Keep it encouraging.${showChooseLangHint ? '\n\n⚠️ I
             actionPrompt = `You are in "Review Mode" (Stage 1 — Correct the original sentence).
 You are a warm English conversation companion helping them perfect their past statement.
 The original error was: "${orig}".
-Evaluate the user's latest response. Did they correct this past error successfully and naturally?
-Be extremely strict: the rephrased sentence must be 100% correct, natural, and native-like English (100% accuracy).
-If it is 100% correct and natural, praise them warmly (e.g. "Bull's-eye! Perfect intuition!"), explain the grammar rule or why the correction is correct in simple terms (no academic grammar terms).
-Crucially, you must append "[RESOLVED: ${orig}]" at the very end of your response.
-If they did not succeed or if there are still minor errors, typos, or unnatural phrasing, do NOT show them the answer. Instead, use Recast and Scaffolding (e.g. give a gentle clue like "Close! Think about the verb tense here...", ask a scaffolding question), and encourage them to try rephrasing it again. Do NOT append the RESOLVED tag.
+The error category is: "${targetErrorTypeFriendly}".
+
+If the user's message is just "I am ready to review.", you must warm-up the session and state:
+1. Warmly tell them which past sentence we are correcting (e.g. "${orig}").
+2. Explain clearly and in simple everyday language (using Chinese if preferred, like "这里错在...") what the grammar error type "${targetErrorTypeFriendly}" means in this context and why it was incorrect.
+3. Give them a gentle, clear scaffolding clue/direction on how they should correct it, without revealing the final answer. Ask them to rewrite it.
+
+If they are submitting a correction attempt:
+- Evaluate if they corrected this past error successfully and naturally. Be extremely strict: the rephrased sentence must be 100% correct, natural, and native-like English (100% accuracy).
+- If it is 100% correct and natural, praise them warmly, explain the grammar rule in simple terms, AND THEN immediately provide a NEW, simple scenario challenge written in CHINESE ONLY (you MUST dynamically invent a new, custom daily context based on the current grammar point or topic - for instance, if the grammar is about adding sugar, invent a scenario about ordering coffee/tea; if it is about software, invent a scenario about building projects/tools; do NOT repeat the same computer repair scenario for different topics) testing the SAME grammar point. Ask them to translate it or respond in English. Do NOT provide any English words, blanks, hints, or structural hints in this scenario.
+- Crucially, you must append "[RESOLVED: ${orig}]" at the very end of your response.
+- If they did not succeed or if there are still minor errors, typos, or unnatural phrasing, do NOT show them the answer. Instead, explain why it is incorrect and use Recast and Scaffolding (e.g., give a gentle clue like "Close! Think about the verb tense here...", ask a scaffolding question), and encourage them to try rephrasing it again. Do NOT append the RESOLVED tag.
+
 Keep the focus entirely on guiding them to perfect their past language expressions. Ask only one question. You may use up to 6 sentences for evaluation + explanation + next challenge. ${errorHint}${showChooseLangHint ? '\n\n⚠️ IMPORTANT: You MUST append exactly " [CHOOSE_LANG]" at the very end of your response to ask for language preference.' : ''}`
           } else {
             actionPrompt = `You are in "Review Mode" (Stage 2 — New scenario application).
 You are a warm English conversation companion testing if they can apply "${type}" in the scenario.
 The user's original error being reviewed is: "${orig}".
-Evaluate the user's latest response. Did they complete the translation or sentence challenge correctly, using the correct grammar form of "${type}"?
-Be extremely strict: their sentence must be 100% correct and natural English (100% accuracy).
-If it is 100% correct and natural, praise them warmly (e.g. "Spot on! You've totally mastered this!"), explain the grammar point in simple terms (no academic grammar terms).
-Crucially, you must append "[RESOLVED: ${orig}]" at the very end of your response to mark this error as fully conquered!
-If they did not succeed or if there are still minor errors, typos, or incorrect phrasing, do NOT give the answer. Use Recast and Scaffolding (e.g. "Almost! Remember to use... Can you try that again?"), guide them step-by-step, and do NOT append the RESOLVED tag.
-Keep the focus entirely on perfecting their expression under this new scenario. Ask only one question. You may use up to 6 sentences for evaluation + explanation + next challenge. ${errorHint}${showChooseLangHint ? '\n\n⚠️ IMPORTANT: You MUST append exactly " [CHOOSE_LANG]" at the very end of your response to ask for language preference.' : ''}`
+Evaluate the user's latest response. Did they complete the challenge correctly, using the correct grammar form of "${type}"?
+
+If their sentence is grammatically correct, natural, and successfully applies the grammar rules of "${type}" (even if they slightly changed the scenario details, as long as the core grammar point is used correctly):
+- Praise them warmly (e.g. "Spot on! Mastered!").
+- Briefly explain why it is correct.
+- Do NOT ask any follow-up questions. Do NOT give them any more challenges. The review session is now complete.
+- Crucially, you must append "[RESOLVED: ${orig}]" at the very end of your response to mark this error as fully conquered!
+
+If they made grammatical errors, typos, or failed to apply the correct grammar form of "${type}":
+- Do NOT give them the answer.
+- Explain gently what was wrong.
+- Use Recast and Scaffolding to give a clue, and ask them to try rewriting it. Do NOT append the RESOLVED tag.
+
+Keep the focus entirely on verifying their grammar application. Ask at most one question (only if they got it wrong). You may use up to 4 sentences. ${errorHint}${showChooseLangHint ? '\n\n⚠️ IMPORTANT: You MUST append exactly " [CHOOSE_LANG]" at the very end of your response to ask for language preference.' : ''}`
           }
         } else {
           actionPrompt = `You are in "Review Mode".
@@ -706,11 +846,11 @@ ${conversationSoFar}
     }
 
     // 每个语言模式追加统一的结构化输出格式指令
-    const langEnforcementSuffix = isEnglishPref
+    let langEnforcementSuffix = isEnglishPref
       ? '\n\n## OUTPUT LANGUAGE — ENGLISH ONLY\nYour entire output must be in English only. Zero Chinese characters.'
       : isBalancedPref
-      ? '\n\n## OUTPUT FORMAT — BALANCED\nYour response must include these elements (in order):\n[English greeting/conversation]\n(提示：中文语法提示) — a short Chinese hint in brackets\n[English challenge/question]\n\nYou MUST include the (提示：...) bracket. Do not skip it.'
-      : '\n\n## OUTPUT FORMAT — CHINESE\nYour response must use this structure:\n[一句英文开场]\n【中文语法讲解】— explain the grammar in Chinese 大白话, at least 2-3 sentences\n（挑战/问题）— in English\n\nYou MUST include the 【中文语法讲解】section. Do not skip it.'
+      ? `\n\n## OUTPUT FORMAT — BALANCED\n${userMessage === 'I am ready to review.' ? 'Your response MUST follow this structure:\n[English greeting]\n(提示：用中文解释错题病因与改正思路) — a clear Chinese explanation in brackets\n[English rewrite challenge]' : 'Your response must include these elements (in order):\n[English greeting/conversation]\n(提示：中文语法提示) — a short Chinese hint in brackets\n[English challenge/question]'}${isReviewMode ? '\n[RESOLVED: ' + (targetErrorToReview ? targetErrorToReview.original_text : '') + '] — (CRITICAL: Only append this if the user successfully corrected the error (Stage 1) or correctly applied the rule under the new scenario (Stage 2))' : ''}\n\nYou MUST follow this order.`
+      : `\n\n## OUTPUT FORMAT — CHINESE\n${userMessage === 'I am ready to review.' ? 'Your response MUST follow this structure:\n[一句英文开场]\n【中文语法讲解】— 详细说明用户错题的病因与改正线索, at least 2-3 sentences\n（改写挑战）— in English' : 'Your response must use this structure:\n[一句英文开场]\n【中文语法讲解】— explain the grammar in Chinese 大白话, at least 2-3 sentences\n（挑战/问题）— in English'}${isReviewMode ? '\n[RESOLVED: ' + (targetErrorToReview ? targetErrorToReview.original_text : '') + '] — (CRITICAL: Only append this if the user successfully corrected the error (Stage 1) or correctly applied the rule under the new scenario (Stage 2))' : ''}\n\nYou MUST follow this order.`
 
     explanationPrefPrompt += langEnforcementSuffix
 
@@ -816,35 +956,64 @@ ${conversationSoFar}
       }
 
       // 检查 AI 是否判定解决了某条历史错句，并更新数据库 noted_by_user = true
-      const resolvedMatch = cleanedAiResponse.match(/\[RESOLVED:\s*([\s\S]*?)\]/i)
+      const resolvedMatch = cleanedAiResponse.match(/\[RESOLVED(?::\s*([\s\S]*?))?\]/i) ||
+                            cleanedAiResponse.match(/(?:^|\n|[\s.!?])RESOLVED:\s*([^\n.\]]+)/i) ||
+                            cleanedAiResponse.match(/(?:^|\n|[\s.!?])RESOLVED\b/i)
+
+      console.log('=== [DEBUG REVIEW] ===');
+      console.log('cleanedAiResponse:', cleanedAiResponse);
       if (resolvedMatch) {
-        const rawResolvedText = resolvedMatch[1].trim()
+        console.log('resolvedMatch found!');
+        const rawResolvedText = resolvedMatch[1]?.trim() || ''
         const cleanResolvedText = rawResolvedText.replace(/^["'*`“]+|["'*`”]+$/g, '').trim()
         isResolved = true
-        resolvedText = cleanResolvedText
-        // 去除 [RESOLVED: ...] 标签，不展示给用户
-        finalAiResponse = finalAiResponse.replace(/\[RESOLVED:\s*[\s\S]*?\]/gi, '').trim()
+        resolvedText = cleanResolvedText || (targetErrorToReview ? targetErrorToReview.original_text : '')
+        
+        // 去除所有可能形式的 [RESOLVED] 标签，不展示给用户
+        finalAiResponse = finalAiResponse
+          .replace(/\[RESOLVED(?::\s*[\s\S]*?)?\]/gi, '')
+          .replace(/(?:^|\n|[\s.!?])RESOLVED:\s*[^\n.\]]+/gi, '')
+          .replace(/(?:^|\n|[\s.!?])RESOLVED\b/gi, '')
+          .trim()
+        console.log('finalAiResponse after strip:', finalAiResponse);
         
         try {
           if (!targetErrorToReview) {
             console.warn('[RESOLVED] targetErrorToReview is null, skipping UPDATE')
           } else if (targetErrorStage === 0) {
-            // 通过第一关：更新 error_pattern 标记
+            // 通过第一关：更新 error_pattern 标记并保存提取出的新情景挑战
             const currentPattern = targetErrorToReview.error_pattern || ''
             const newPattern = currentPattern.endsWith(':stage-1') ? currentPattern : `${currentPattern}:stage-1`
-            await supabase
+            
+            // 匹配并截取 AI 回复中的【新场景挑战】或其它新场景提示词字样及其后的全部内容
+            const scenarioMatch = finalAiResponse.match(/(?:【新场景挑战】|Now here's a new scenario[^\n:]*|Now let's try a new scenario[^\n:]*|Now try this:|New scenario challenge:|New scenario:)\s*([\s\S]+)/i)
+            const extractedScenario = scenarioMatch ? (scenarioMatch[0].trim()) : ''
+
+            const { error: updateErr } = await supabase
               .from('error_records')
-              .update({ error_pattern: newPattern })
+              .update({ 
+                error_pattern: newPattern,
+                review_scenario: extractedScenario || undefined
+              })
               .eq('id', targetErrorToReview.id)
+            if (updateErr) {
+              console.error('[Error Records Update Stage 1 Failed]:', updateErr)
+              throw new Error(`Database update failed: ${updateErr.message}`)
+            }
           } else {
             // 通过第二关：完全攻克，打上 noted_by_user 标记
-            await supabase
+            const { error: updateErr } = await supabase
               .from('error_records')
               .update({ noted_by_user: true })
               .eq('id', targetErrorToReview.id)
+            if (updateErr) {
+              console.error('[Error Records Update Stage 2 Failed]:', updateErr)
+              throw new Error(`Database update failed: ${updateErr.message}`)
+            }
           }
         } catch (dbErr) {
           console.error('[Error Resolve Failed]:', dbErr)
+          throw dbErr
         }
       }
       

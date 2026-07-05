@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect } from "react";
-import { ChevronRight, X, Check, Flame, BookOpen, Target, Loader2 } from "lucide-react";
+import { ChevronRight, X, Check, Flame, BookOpen, Target, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from '@/lib/db/supabase-client';
 import { englishKnowledgeGraph } from '@/core/knowledge-graph/english-graph';
 
@@ -36,6 +36,62 @@ function getClueForErrorType(type: string, original: string): string {
   };
   return genericHints[type] || `"${original.slice(0, 20)}..." 这里可以改得更自然一些。`;
 }
+
+function renderAiTaskWithColors(text: string): React.ReactNode {
+  if (!text) return null;
+  
+  // 使用正则表达式对新场景进行模糊匹配并截取
+  const regex = /(【新场景挑战】|Now here's a new scenario[^\n:]*|Now let's try a new scenario[^\n:]*|Now try this:|New scenario challenge:|New scenario:)/i;
+  
+  const match = text.match(regex);
+  if (match && match.index !== undefined) {
+    const splitIndex = match.index;
+    const splitKey = match[0];
+    const prefix = text.slice(0, splitIndex).trim();
+    const suffix = text.slice(splitIndex + splitKey.length).trim();
+    
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {prefix && (
+          <div style={{ color: tokens.textSecondary, fontSize: 13, lineHeight: 1.6 }}>
+            {prefix}
+          </div>
+        )}
+        <div style={{
+          background: tokens.tealSoft,
+          borderLeft: `3px solid ${tokens.teal}`,
+          borderTopRightRadius: 8,
+          borderBottomRightRadius: 8,
+          padding: "12px 14px",
+          color: tokens.teal,
+          fontWeight: 600,
+          lineHeight: 1.6,
+          fontSize: 14,
+        }}>
+          📌 【新场景挑战】{suffix}
+        </div>
+      </div>
+    );
+  }
+  
+  // 兜底：如果完全没有匹配到上述任何新场景提示词，直接以 teal 风格渲染整个框（符合第二关风格）
+  return (
+    <div style={{
+      background: tokens.tealSoft,
+      borderLeft: `3px solid ${tokens.teal}`,
+      borderTopRightRadius: 8,
+      borderBottomRightRadius: 8,
+      padding: "12px 14px",
+      color: tokens.teal,
+      fontWeight: 600,
+      lineHeight: 1.6,
+      fontSize: 14,
+    }}>
+      {text}
+    </div>
+  );
+}
+
 
 const fontImport = `
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -102,6 +158,8 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [aiFeedback, setAiFeedback] = useState('');
+  const [isError, setIsError] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const [aiTask, setAiTask] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [showClue, setShowClue] = useState(false);
@@ -145,6 +203,8 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
     if (!inputValue.trim() || !sessionId) return;
     setIsLoading(true);
     setAiFeedback('');
+    setSuccessMessage('');
+    setIsError(false);
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -154,18 +214,23 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
       const data = await res.json();
       
       if (data.isResolved) {
-        setStage(data.resolvedStage === 1 ? 1 : 2);
         setInputValue('');
-        if (data.resolvedStage === 1 && data.message?.content) {
-          setAiTask(data.message.content);
-        }
-        if (data.resolvedStage === 2) {
+        if (data.resolvedStage === 1) {
+          setStage(1);
+          setSuccessMessage('✅ 答对啦！成功通过第一关，进入第二关。');
+          if (data.message?.content) {
+            setAiTask(data.message.content);
+          }
+        } else if (data.resolvedStage === 2) {
+          setStage(2);
           onComplete();
         }
       } else {
-        setAiFeedback(data.message?.content || 'Needs improvement.');
+        setIsError(true);
+        setAiFeedback(data.message?.content || '句子表达仍有提升空间，再试一次吧。');
       }
     } catch (err) {
+      setIsError(true);
       setAiFeedback('网络错误，请重试');
     } finally {
       setIsLoading(false);
@@ -264,17 +329,25 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
             </div>
             <div
               style={{
-                background: tokens.surfaceCard,
                 borderRadius: 10,
-                padding: "14px 16px",
-                marginBottom: 16,
                 fontSize: 15,
-                color: tokens.coral,
                 fontFamily: "Inter, sans-serif",
                 lineHeight: 1.5,
+                marginBottom: 16,
               }}
             >
-              {stage === 0 ? record.original : (record.reviewScenario || aiTask || "加载新场景中...")}
+              {stage === 0 ? (
+                <div style={{
+                  background: tokens.surfaceCard,
+                  borderRadius: 10,
+                  padding: "14px 16px",
+                  color: tokens.coral,
+                }}>
+                  {record.original}
+                </div>
+              ) : (
+                renderAiTaskWithColors(record.reviewScenario || aiTask || "加载新场景中...")
+              )}
             </div>
 
             {/* first-round inline grammar explanation */}
@@ -326,10 +399,11 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
               </div>
             )}
 
+            {/* 错误提示气泡：高对比珊瑚红 */}
             {aiFeedback && (
               <div style={{
-                background: tokens.tealSoft,
-                border: `1px solid ${tokens.teal}`,
+                background: tokens.coralSoft,
+                border: `1.5px solid ${tokens.coral}`,
                 color: tokens.textPrimary,
                 borderRadius: 8,
                 padding: "10px 12px",
@@ -337,15 +411,36 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
                 fontSize: 13,
                 lineHeight: 1.5,
               }}>
-                <span style={{ fontWeight: 'bold', color: tokens.teal }}>💡 提示：</span>
-                {aiFeedback}
+                <span style={{ fontWeight: 'bold', color: tokens.coral }}>❌ 答错啦，请根据提示修改：</span>
+                <div style={{ marginTop: 4, color: tokens.textSecondary }}>{aiFeedback}</div>
+              </div>
+            )}
+
+            {/* 成功提示气泡：高对比金色/绿色 */}
+            {successMessage && (
+              <div style={{
+                background: tokens.goldSoft,
+                border: `1.5px solid ${tokens.gold}`,
+                color: tokens.textPrimary,
+                borderRadius: 8,
+                padding: "10px 12px",
+                marginBottom: 12,
+                fontSize: 13,
+                lineHeight: 1.5,
+              }}>
+                <span style={{ fontWeight: 'bold', color: tokens.gold }}>{successMessage}</span>
               </div>
             )}
 
             <textarea
+              key={stage === 0 ? "stage-0-input" : "stage-1-input"}
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
-              placeholder="输入你的答案..."
+              placeholder={stage === 0 ? "输入修改后的正确句子..." : "输入你在新场景下的回答..."}
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
               disabled={isLoading || !sessionId}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
               rows={3}
@@ -437,6 +532,9 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
 
 function ErrorCard({ record, onReview }: { record: any, onReview: () => void }) {
   const info = stageInfo[record.stage];
+  const [isExpanded, setIsExpanded] = useState(false);
+  const isConquered = record.stage === 2;
+
   return (
     <div
       style={{
@@ -445,6 +543,7 @@ function ErrorCard({ record, onReview }: { record: any, onReview: () => void }) 
         padding: "14px 16px",
         marginBottom: 10,
         border: `1px solid ${tokens.divider}`,
+        opacity: isConquered ? 0.75 : 1,
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
@@ -467,7 +566,7 @@ function ErrorCard({ record, onReview }: { record: any, onReview: () => void }) 
               fontSize: 10,
               padding: "2px 7px",
               borderRadius: 5,
-              background: tokens.goldSoft,
+              background: isConquered ? `${tokens.gold}20` : tokens.goldSoft,
               color: tokens.gold,
             }}
           >
@@ -479,15 +578,72 @@ function ErrorCard({ record, onReview }: { record: any, onReview: () => void }) 
         </span>
       </div>
 
-      <div style={{ fontSize: 14, color: tokens.coral, textDecoration: "line-through", marginBottom: 3, opacity: 0.85 }}>
-        {record.original}
-      </div>
-      <div style={{ fontSize: 14, color: tokens.textPrimary, marginBottom: 12 }}>
-        {record.fixed}
-      </div>
+      {!isConquered ? (
+        <>
+          <div style={{ fontSize: 14, color: tokens.coral, textDecoration: "line-through", marginBottom: 3, opacity: 0.85 }}>
+            {record.original}
+          </div>
+          <div style={{ fontSize: 14, color: tokens.textPrimary, marginBottom: 12 }}>
+            {record.fixed}
+          </div>
+        </>
+      ) : (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 14, color: tokens.coral, textDecoration: "line-through", opacity: 0.6 }}>
+              {record.original}
+            </div>
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: tokens.textSecondary,
+                cursor: "pointer",
+                padding: "2px 4px",
+                display: "flex",
+                alignItems: "center",
+                gap: 2,
+                fontSize: 11,
+                fontFamily: "Inter, sans-serif",
+                fontWeight: 600,
+              }}
+            >
+              {isExpanded ? "收起" : "展开详情"}
+              {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+          </div>
+          
+          {isExpanded && (
+            <div style={{ 
+              marginTop: 10, 
+              padding: "10px 12px", 
+              background: "#ffffff04", 
+              borderRadius: 8, 
+              borderLeft: `2px solid ${tokens.gold}`,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              animation: "slideUp 0.2s ease"
+            }}>
+              <div>
+                <div style={{ fontSize: 11, color: tokens.textSecondary, marginBottom: 2 }}>改正好的句子：</div>
+                <div style={{ fontSize: 13, color: tokens.gold }}>{record.fixed}</div>
+              </div>
+              {record.reviewScenario && (
+                <div>
+                  <div style={{ fontSize: 11, color: tokens.textSecondary, marginBottom: 2 }}>第二关情景挑战：</div>
+                  <div style={{ fontSize: 13, color: tokens.teal, lineHeight: 1.4 }}>
+                    {record.reviewScenario}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* explanation */}
-      {record.explanation && (
+      {record.explanation && (!isConquered || isExpanded) && (
         <div style={{ fontSize: 12, color: tokens.textSecondary, lineHeight: 1.55, marginBottom: 12, borderLeft: `2px solid ${tokens.divider}`, paddingLeft: 8 }}>
           {record.explanation}
         </div>
@@ -579,7 +735,45 @@ export function ReviewSection() {
           dialogueContext,
         };
       });
-      setRecords(mapped);
+      
+      // 错句去重合并与最高关卡进度同步
+      const seen = new Set<string>();
+      const deduplicated: typeof mapped = [];
+      const normalizeText = (text: string) => {
+        return text.toLowerCase().trim().replace(/[.,!?，。！？]/g, '');
+      };
+
+      // 1. 找出重复句子中取得的最高 stage 状态
+      const maxStageMap = new Map<string, number>();
+      mapped.forEach(item => {
+        const norm = normalizeText(item.original);
+        const currentMax = maxStageMap.get(norm) ?? 0;
+        if (item.stage > currentMax) {
+          maxStageMap.set(norm, item.stage);
+        }
+      });
+
+      // 2. 过滤去重，只保留最新的一条，并将 stage 强行同步为该句取得的全局最高 stage
+      mapped.forEach(item => {
+        const norm = normalizeText(item.original);
+        if (!seen.has(norm)) {
+          seen.add(norm);
+          const maxStage = maxStageMap.get(norm) ?? item.stage;
+          deduplicated.push({
+            ...item,
+            stage: maxStage
+          });
+        }
+      });
+
+      // 3. 对去重后的卡片按掌握状态排序（未消灭置顶，已消灭置底）
+      const sorted = deduplicated.sort((a, b) => {
+        if (a.stage === 2 && b.stage < 2) return 1;
+        if (a.stage < 2 && b.stage === 2) return -1;
+        return 0; // 保持原有创建时间降序
+      });
+      
+      setRecords(sorted);
     }
   };
 
