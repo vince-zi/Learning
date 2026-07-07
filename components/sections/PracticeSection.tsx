@@ -544,6 +544,17 @@ export function PracticeSection() {
   const handleEndSession = async () => {
     if (!activeSessionId || isEndingSession) return;
     setIsEndingSession(true);
+
+    // 10 seconds safety timeout to force local reset if backend hangs
+    const safetyTimeout = setTimeout(() => {
+      console.warn('Ending session timed out. Forcing local state reset.');
+      localStorage.removeItem('learniny_last_session_id');
+      setLastSessionId(null);
+      setActiveSessionId(null);
+      setSession(null);
+      setIsEndingSession(false);
+    }, 10000);
+
     try {
       const userId = localStorage.getItem('learniny_user_id') || 'mock_user';
       // 1. 调用 POST /api/discoveries 自动抽提学习发现与评估，点亮星图
@@ -570,6 +581,8 @@ export function PracticeSection() {
         body: JSON.stringify({ sessionId: activeSessionId }),
       });
 
+      clearTimeout(safetyTimeout);
+
       if (discoveryData && discoveryData.success) {
         setSummaryData(discoveryData);
       } else {
@@ -580,6 +593,7 @@ export function PracticeSection() {
       }
     } catch (err) {
       console.error('Error during ending session:', err);
+      clearTimeout(safetyTimeout);
       localStorage.removeItem('learniny_last_session_id');
       setLastSessionId(null);
       setActiveSessionId(null);
@@ -590,8 +604,9 @@ export function PracticeSection() {
   };
 
   return (
-    <div className="w-full h-full flex flex-col pt-24 pb-0 items-center justify-center pointer-events-auto">
+    <div className="w-full h-full flex flex-col pt-12 pb-0 items-center justify-center pointer-events-auto">
       <div className="max-w-2xl w-full h-full flex flex-col relative overflow-hidden">
+
         
         {/* Welcome State / Setup session */}
         {!activeSessionId ? (

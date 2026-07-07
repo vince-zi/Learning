@@ -22,126 +22,85 @@ export async function POST(request: Request) {
 
     const isEnglish = module === 'english'
 
-    // 获取会话消息历史
     const supabase = getServerClient()
-    const { data: messages } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('created_at', { ascending: true })
+
+    // 1. 并行读取所有必要的数据
+    const [messagesRes, photosRes, profileRes, errorsRes] = await Promise.all([
+      supabase
+        .from('messages')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('photos')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('upload_order', { ascending: true }),
+      (isEnglish && userId && userId !== 'anonymous')
+        ? supabase.from('english_learner_profiles').select('*').eq('user_id', userId).maybeSingle()
+        : Promise.resolve({ data: null }),
+      (isEnglish && userId && userId !== 'anonymous')
+        ? supabase.from('error_records').select('original_text, corrected_text, error_type, noted_by_user').eq('user_id', userId)
+        : Promise.resolve({ data: null }),
+    ])
+
+    const messages = messagesRes.data
+    const photos = photosRes.data
+    const currentProfile = profileRes.data
+    const allErrors = errorsRes.data
 
     const sessionMessages = (messages || []).map((m: any) => ({
       role: m.role,
       content: m.content,
     }))
 
-    // 获取相关照片（仅摄影模式）
-    const { data: photos } = await supabase
-      .from('photos')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('upload_order', { ascending: true })
-
     const beforePhotoUrl = photos?.[0]?.image_url
     const afterPhotoUrl = photos?.[1]?.image_url
 
-    // 尝试用 AI 生成发现
-    let cardData = null
-    try {
-      const provider = getCachedProvider()
-      const prompt = isEnglish
-        ? buildEnglishDiscoveryPrompt(
-            sessionMessages,
-            knowledgeNodeId || 'self-intro',
-            extractInsightFromMessages(sessionMessages)
-          )
-        : buildDiscoveryPrompt(
-            sessionMessages,
-            knowledgeNodeId || '视觉重心与构图',
-            extractInsightFromMessages(sessionMessages)
-          )
-
-      const response = await provider.chat({
-        systemPrompt: isEnglish ? ENGLISH_SYSTEM_PROMPT : SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: prompt }],
-        maxTokens: 500,
-        temperature: 0.7,
-      })
-
-      cardData = parseDiscoveryResponse(response.content)
-    } catch (aiError) {
-      console.warn('[Discoveries API] AI failed, using manual fallback:', aiError)
-    }
-
-    // 回退方案
-    if (!cardData) {
-      cardData = isEnglish
-        ? buildManualEnglishDiscovery(sessionMessages, knowledgeNodeId || '自我介绍与表达')
-        : buildManualDiscovery(sessionMessages, knowledgeNodeId || '视觉重心')
-    }
-
-    // 验证并选择知识图谱节点 ID
-    const validNodes = isEnglish
-      ? ['self-intro', 'daily-routine', 'likes-dislikes', 'everyday-situations', 'question-asking', 'opinion-expression', 'comparing-discussing', 'storytelling', 'abstract-thinking']
-      : ['visual-focus', 'visual-balance', 'frame-boundary', 'light-direction', 'exposure-triangle', 'color-temperature', 'color-contrast', 'time-visualization', 'perspective-narrative']
-
-    const nodeFromAi = (cardData as any).knowledge_node_id
-    const finalNodeId = (nodeFromAi && validNodes.includes(nodeFromAi))
-      ? nodeFromAi
-      : (knowledgeNodeId && validNodes.includes(knowledgeNodeId))
-      ? knowledgeNodeId
-      : (isEnglish ? 'self-intro' : 'visual-focus')
-
-    // 写入数据库
-    const discoveryId = uuidv4()
-    const { data: discovery, error } = await supabase
-      .from('discoveries')
-      .insert({
-        id: discoveryId,
-        session_id: sessionId,
-        user_id: userId || 'anonymous',
-        title: cardData.title,
-        summary: cardData.summary,
-        photo_urls: [beforePhotoUrl, afterPhotoUrl].filter(Boolean) as string[],
-        tags: cardData.tags,
-        source_round: 2,
-        knowledge_node_id: finalNodeId,
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error('Failed to save discovery:', error.message)
-    }
-
-    // 更新会话
-    await supabase
-      .from('learning_sessions')
-      .update({
-        discovery_count: (messages?.length ? 1 : 1),
-      })
-      .eq('id', sessionId)
-
-    // 英语模块：评估并保存英语学习者画像 (CEFR 等级 & 词汇量预估)
-    if (isEnglish && userId && userId !== 'anonymous') {
+    // 2. 定义并行的 AI 处理任务
+    const cardPromise = (async () => {
+      let cardData = null
       try {
         const provider = getCachedProvider()
+        const prompt = isEnglish
+          ? buildEnglishDiscoveryPrompt(
+              sessionMessages,
+              knowledgeNodeId || 'self-intro',
+              extractInsightFromMessages(sessionMessages)
+            )
+          : buildDiscoveryPrompt(
+              sessionMessages,
+              knowledgeNodeId || '视觉重心与构图',
+              extractInsightFromMessages(sessionMessages)
+            )
+
+        const response = await provider.chat({
+          systemPrompt: isEnglish ? ENGLISH_SYSTEM_PROMPT : SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: prompt }],
+          maxTokens: 500,
+          temperature: 0.7,
+        })
+
+        cardData = parseDiscoveryResponse(response.content)
+      } catch (aiError) {
+        console.warn('[Discoveries API] AI card generation failed, using manual fallback:', aiError)
+      }
+
+      // 回退方案
+      if (!cardData) {
+        cardData = isEnglish
+          ? buildManualEnglishDiscovery(sessionMessages, knowledgeNodeId || '自我介绍与表达')
+          : buildManualDiscovery(sessionMessages, knowledgeNodeId || '视觉重心')
+      }
+      return cardData
+    })()
+
+    const profilePromise = (async () => {
+      if (!isEnglish || !userId || userId === 'anonymous') return null
+      try {
         const messagesSummary = sessionMessages
           .map((m: any) => `[${m.role === 'assistant' ? 'Partner' : 'User'}]: ${m.content}`)
           .join('\n\n')
-
-        // 获取用户当前的画像（若有）
-        const { data: currentProfile } = await supabase
-          .from('english_learner_profiles')
-          .select('*')
-          .eq('user_id', userId)
-          .maybeSingle()
-
-        // 获取用户历史所有已解决/未解决错词，以提供极具说服力的提升汇总
-        const { data: allErrors } = await supabase
-          .from('error_records')
-          .select('original_text, corrected_text, error_type, noted_by_user')
-          .eq('user_id', userId)
 
         const unsolvedErrors = (allErrors || []).filter((e: any) => !e.noted_by_user)
         const solvedErrors = (allErrors || []).filter((e: any) => e.noted_by_user)
@@ -181,6 +140,7 @@ Evaluate and output a JSON object containing the following keys (no markdown cod
 
 Ensure the output is valid JSON.`
 
+        const provider = getCachedProvider()
         const profileResponse = await provider.chat({
           systemPrompt: 'You are an expert English language proficiency assessor. You evaluate written and spoken English dialogs and output structured assessments.',
           messages: [{ role: 'user', content: profilePrompt }],
@@ -222,6 +182,53 @@ Ensure the output is valid JSON.`
       } catch (profError) {
         console.error('[Profile Assessment Error]:', profError)
       }
+    })()
+
+    // 3. 并行等待 AI 处理完成
+    const [cardData] = await Promise.all([cardPromise, profilePromise])
+
+    // 验证并选择知识图谱节点 ID
+    const validNodes = isEnglish
+      ? ['self-intro', 'daily-routine', 'likes-dislikes', 'everyday-situations', 'question-asking', 'opinion-expression', 'comparing-discussing', 'storytelling', 'abstract-thinking']
+      : ['visual-focus', 'visual-balance', 'frame-boundary', 'light-direction', 'exposure-triangle', 'color-temperature', 'color-contrast', 'time-visualization', 'perspective-narrative']
+
+    const nodeFromAi = (cardData as any).knowledge_node_id
+    const finalNodeId = (nodeFromAi && validNodes.includes(nodeFromAi))
+      ? nodeFromAi
+      : (knowledgeNodeId && validNodes.includes(knowledgeNodeId))
+      ? knowledgeNodeId
+      : (isEnglish ? 'self-intro' : 'visual-focus')
+
+    // 4. 并行写入发现记录并更新会话
+    const discoveryId = uuidv4()
+    const insertDiscoveryPromise = supabase
+      .from('discoveries')
+      .insert({
+        id: discoveryId,
+        session_id: sessionId,
+        user_id: userId || 'anonymous',
+        title: cardData.title,
+        summary: cardData.summary,
+        photo_urls: [beforePhotoUrl, afterPhotoUrl].filter(Boolean) as string[],
+        tags: cardData.tags,
+        source_round: 2,
+        knowledge_node_id: finalNodeId,
+      })
+
+    const updateSessionPromise = supabase
+      .from('learning_sessions')
+      .update({
+        discovery_count: (messages?.length ? 1 : 1),
+      })
+      .eq('id', sessionId)
+
+    const [insertRes, updateRes] = await Promise.all([insertDiscoveryPromise, updateSessionPromise])
+
+    if (insertRes.error) {
+      console.error('Failed to save discovery:', insertRes.error.message)
+    }
+    if (updateRes.error) {
+      console.error('Failed to update session:', updateRes.error.message)
     }
 
     return NextResponse.json({
