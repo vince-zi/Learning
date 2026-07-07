@@ -1,8 +1,9 @@
 'use client';
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { ChevronRight, X, Check, Flame, BookOpen, Target, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from '@/lib/db/supabase-client';
 import { englishKnowledgeGraph } from '@/core/knowledge-graph/english-graph';
+import { useSessionStore } from '@/store/session-store';
 
 const tokens = {
   surfaceAI: "#0A0A0A",
@@ -157,6 +158,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
   const [stage, setStage] = useState(record.stage >= 1 ? 1 : 0);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [aiFeedback, setAiFeedback] = useState('');
   const [isError, setIsError] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
@@ -200,7 +202,8 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
   }, [record.id]);
 
   const handleSubmit = async () => {
-    if (!inputValue.trim() || !sessionId) return;
+    if (isSubmittingRef.current || !inputValue.trim() || !sessionId) return;
+    isSubmittingRef.current = true;
     setIsLoading(true);
     setAiFeedback('');
     setSuccessMessage('');
@@ -209,7 +212,13 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, userId, userMessage: inputValue, isEnglish: true })
+        body: JSON.stringify({ 
+          sessionId, 
+          userId, 
+          userMessage: inputValue, 
+          isEnglish: true,
+          reviewStage: stage
+        })
       });
       const data = await res.json();
       
@@ -233,6 +242,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
       setIsError(true);
       setAiFeedback('网络错误，请重试');
     } finally {
+      isSubmittingRef.current = false;
       setIsLoading(false);
     }
   };
@@ -275,9 +285,9 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
         </div>
 
         <div style={{ display: "flex", alignItems: "center", marginBottom: 22 }}>
-          {["第一关 · 纠正原句", "第二关 · 新场景重测"].map((label, idx) => (
+          {["消除这道错题"].map((label, idx) => (
             <React.Fragment key={idx}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+              <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <div
                   style={{
                     width: 26,
@@ -286,30 +296,26 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    background: stepDone(idx) ? tokens.gold : stage === idx ? tokens.tealSoft : "#ffffff10",
-                    border: stage === idx ? `1.5px solid ${tokens.teal}` : "none",
-                    color: stepDone(idx) ? "#181410" : tokens.textSecondary,
+                    background: stage === 2 ? tokens.gold : tokens.tealSoft,
+                    border: stage !== 2 ? `1.5px solid ${tokens.teal}` : "none",
+                    color: stage === 2 ? "#181410" : tokens.teal,
                     fontSize: 12,
                     fontWeight: 600,
                   }}
                 >
-                  {stepDone(idx) ? <Check size={13} /> : idx + 1}
+                  {stage === 2 ? <Check size={13} /> : idx + 1}
                 </div>
                 <div
                   style={{
-                    fontFamily: "'JetBrains Mono', monospace",
-                    fontSize: 9,
-                    color: stage === idx ? tokens.textPrimary : tokens.textSecondary,
-                    textAlign: "center",
-                    width: 74,
+                    fontFamily: "Inter, sans-serif",
+                    fontSize: 13,
+                    color: stage === 2 ? tokens.gold : tokens.textPrimary,
+                    fontWeight: 500,
                   }}
                 >
                   {label}
                 </div>
               </div>
-              {idx === 0 && (
-                <div style={{ flex: 1, height: 1.5, background: stepDone(0) ? tokens.gold : tokens.divider, margin: "0 4px 18px" }} />
-              )}
             </React.Fragment>
           ))}
         </div>
@@ -393,7 +399,12 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
                     fontSize: 12,
                     lineHeight: 1.5,
                   }}>
-                    💡 {getClueForErrorType(record.category, record.original)}
+                    <div>💡 {getClueForErrorType(record.category, record.original)}</div>
+                    {record.fixed && record.fixed !== '待 AI 修正...' && (
+                      <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed rgba(255, 255, 255, 0.1)', color: tokens.gold }}>
+                        👉 参考表达：{record.fixed}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -481,7 +492,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
               }}
             >
               {isLoading && <Loader2 size={16} className="animate-spin" />}
-              {stage === 0 ? "提交，进入第二关" : "提交，完成消灭"}
+              提交并消除错题
             </button>
           </>
         ) : (
@@ -504,7 +515,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
               已消灭
             </div>
             <div style={{ fontSize: 13, color: tokens.textSecondary, marginBottom: 20 }}>
-              这个错误已从两个不同场景中验证掌握
+              你已完美纠正了该错句，已成功掌握！
             </div>
             <button
               onClick={onClose}
@@ -678,6 +689,7 @@ function ErrorCard({ record, onReview }: { record: any, onReview: () => void }) 
 }
 
 export function ReviewSection() {
+  const { activeSection } = useSessionStore();
   const [tab, setTab] = useState("all");
   const [reviewing, setReviewing] = useState<any>(null);
   const [records, setRecords] = useState<any[]>([]);
@@ -778,8 +790,10 @@ export function ReviewSection() {
   };
 
   useEffect(() => {
-    fetchRecords();
-  }, []);
+    if (activeSection === 'review') {
+      fetchRecords();
+    }
+  }, [activeSection]);
 
   const pendingCount = records.filter((r) => r.stage < 2).length;
   const clearedThisWeek = records.filter((r) => r.stage === 2).length;

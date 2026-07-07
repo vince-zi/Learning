@@ -77,11 +77,11 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
 
       <LeftNav />
 
-      <div className="absolute inset-0 z-10 overflow-hidden">
+      <SafeBackground eventSource={mainRef} />
+
+      <div className="absolute inset-0 z-10 overflow-hidden" style={{ transform: 'translate3d(0, 0, 0)' }}>
         {children}
       </div>
-
-      <SafeBackground eventSource={mainRef} />
     </div>
   );
 }

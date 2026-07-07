@@ -30,6 +30,7 @@ export async function POST(request: Request) {
       module = 'photography',
       continueChatting = false,
       explanationPreference,
+      reviewStage,
     } = body
 
     const langPref = explanationPreference // null | 'chinese' | 'balanced' | 'english'
@@ -159,7 +160,8 @@ export async function POST(request: Request) {
             targetErrorToReview = selectTargetErrorSpacedRepetition(nodeErrors)
           }
           const pattern = targetErrorToReview ? (targetErrorToReview.error_pattern || '') : ''
-          targetErrorStage = pattern.endsWith(':stage-1') ? 1 : 0
+          const dbStage = pattern.endsWith(':stage-1') ? 1 : 0
+          targetErrorStage = typeof reviewStage === 'number' ? reviewStage : dbStage
           targetErrorTypeFriendly = targetErrorToReview ? getFriendlyErrorName(targetErrorToReview.error_type) : ''
         }
 
@@ -877,23 +879,78 @@ ${conversationSoFar}
       finalSystemPromptWithContext += '\n\n## CURRENT SYSTEM ACTION INSTRUCTION (SYSTEM ONLY - HIDDEN FROM USER):\n' + actionPrompt;
     }
 
-    // --- 6. 调用 AI ---
-    const provider = getCachedProvider()
-    const response = await provider.chat({
-      systemPrompt: finalSystemPromptWithContext,
-      messages: [
-        ...sessionHistory.slice(-6).map(m => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-        })),
-        { role: 'user', content: finalUserContent },
-      ],
-      imageUrls,
-      maxTokens: 800,
-      temperature: 0.7,
-    })
+    let isLocalReviewResponse = false
+    let localAiResponse = ''
 
-    const aiResponse = response.content
+    if (isReviewMode && targetErrorToReview) {
+      const orig = targetErrorToReview.original_text
+      const corrected = targetErrorToReview.corrected_text || ''
+      const typeName = targetErrorTypeFriendly || '语法错误'
+      
+      if (userMessage === 'I am ready to review.') {
+        localAiResponse = `你好！让我们来温习并纠正这句你之前在对话里说错的句子：
+        
+👉 **"${orig}"**
+
+这里错在 **${typeName}**。请尝试用正确的英文重新改写一遍吧！`
+        isLocalReviewResponse = true
+      } else {
+        const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().split(/\s+/).filter(Boolean)
+        const wordsAttempt = clean(userMessage)
+        const wordsCorrect = clean(corrected)
+        const setAttempt = new Set(wordsAttempt)
+        const setCorrect = new Set(wordsCorrect)
+        let intersection = 0;
+        for (const w of setAttempt) {
+          if (setCorrect.has(w)) intersection++;
+        }
+        const union = new Set([...wordsAttempt, ...wordsCorrect]).size;
+        const Jaccard = union === 0 ? 0 : (intersection / union);
+        console.log('[Local Review Eval]', { Jaccard, wordsAttempt, wordsCorrect })
+        
+        if (Jaccard >= 0.75) {
+          localAiResponse = `太棒了！你的改写非常正确。
+
+🌟 **标准地道英文参考**：
+"${corrected}"
+
+恭喜！你已完全攻克了这一语法薄弱点！
+
+[RESOLVED: ${orig}]`
+        } else {
+          localAiResponse = `接近了，但表达还有一点点提升空间哦。
+提示：请仔细对照，把原句中的拼写和中文部分进行地道翻译。
+
+👉 原句：**"${orig}"**
+👉 参考修改方向：**${typeName}**
+
+请再尝试修改一次吧！`
+        }
+        isLocalReviewResponse = true
+      }
+    }
+
+    let aiResponse = ''
+    if (isLocalReviewResponse) {
+      aiResponse = localAiResponse
+    } else {
+      // --- 6. 调用 AI ---
+      const provider = getCachedProvider()
+      const response = await provider.chat({
+        systemPrompt: finalSystemPromptWithContext,
+        messages: [
+          ...sessionHistory.slice(-6).map(m => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          })),
+          { role: 'user', content: finalUserContent },
+        ],
+        imageUrls,
+        maxTokens: 800,
+        temperature: 0.7,
+      })
+      aiResponse = response.content
+    }
 
     // --- 7. 解析回复与挑战任务 ---
     let finalAiResponse = aiResponse
@@ -980,34 +1037,11 @@ ${conversationSoFar}
         try {
           if (!targetErrorToReview) {
             console.warn('[RESOLVED] targetErrorToReview is null, skipping UPDATE')
-          } else if (targetErrorStage === 0) {
-            // 通过第一关：更新 error_pattern 标记并保存提取出的新情景挑战
-            const currentPattern = targetErrorToReview.error_pattern || ''
-            const newPattern = currentPattern.endsWith(':stage-1') ? currentPattern : `${currentPattern}:stage-1`
-            
-            // 匹配并截取 AI 回复中的【新场景挑战】或其它新场景提示词字样及其后的全部内容
-            const scenarioMatch = finalAiResponse.match(/(?:【新场景挑战】|Now here's a new scenario[^\n:]*|Now let's try a new scenario[^\n:]*|Now try this:|New scenario challenge:|New scenario:)\s*([\s\S]+)/i)
-            const extractedScenario = scenarioMatch ? (scenarioMatch[0].trim()) : ''
-
-            const { error: updateErr } = await supabase
-              .from('error_records')
-              .update({ 
-                error_pattern: newPattern,
-                review_scenario: extractedScenario || undefined
-              })
-              .eq('id', targetErrorToReview.id)
-            if (updateErr) {
-              console.error('[Error Records Update Stage 1 Failed]:', updateErr)
-              throw new Error(`Database update failed: ${updateErr.message}`)
-            }
           } else {
-            // 通过第二关：完全攻克，打上 noted_by_user 标记
-            const { error: updateErr } = await supabase
-              .from('error_records')
-              .update({ noted_by_user: true })
-              .eq('id', targetErrorToReview.id)
+            // 本地逻辑直接将该错句完全攻克，打上 noted_by_user 标记
+            const { error: updateErr } = await safeUpdateErrorRecord(supabase, targetErrorToReview.id, { noted_by_user: true })
             if (updateErr) {
-              console.error('[Error Records Update Stage 2 Failed]:', updateErr)
+              console.error('[Error Records Update Failed]:', updateErr)
               throw new Error(`Database update failed: ${updateErr.message}`)
             }
           }
@@ -1064,8 +1098,14 @@ ${conversationSoFar}
       },
     })
 
+    // Define greeting/single-word filter to avoid inserting greetings/1-word entries into error_records
+    const userWords = userMessage.trim().split(/\s+/).filter((w: string) => w.length > 0);
+    const lowercaseUserMsg = userMessage.trim().toLowerCase();
+    const commonGreetings = ['hi', 'hello', 'hey', 'hallo', 'yes', 'ok', 'no', 'thanks', 'thank you', 'bye', 'goodbye', '[init_free_conversation]', 'i am ready to review.'];
+    const isSingleWordOrGreeting = userWords.length <= 1 || commonGreetings.includes(lowercaseUserMsg);
+
     // --- 8.5 记录英语错误（带有提取到的 corrected_text） ---
-    if (isEnglish && englishDiag && englishDiag.errorsInResponse.length > 0) {
+    if (!isReviewMode && !isSingleWordOrGreeting && isEnglish && englishDiag && englishDiag.errorsInResponse.length > 0) {
       try {
         const errorInserts = englishDiag.errorsInResponse.map(e => {
           const cleanText = e.originalText.replace(/^\.\.\.|\.\.\.$/g, '').trim() || userMessage
@@ -1081,16 +1121,19 @@ ${conversationSoFar}
             review_scenario: `请尝试用你在练习中学到的这个表达，向一个朋友描述一件相关的事。`,
           }
         })
-        await supabase.from('error_records').insert(errorInserts)
+        const { error: insertErr } = await safeInsertErrorRecords(supabase, errorInserts)
+        if (insertErr) {
+          console.error('[Error Records Insertion Failed]:', insertErr)
+        }
       } catch (dbErr) {
         console.error('[Error Records Insertion Failed]:', dbErr)
       }
-    } else if (isEnglish && extractedCorrectedText) {
+    } else if (!isReviewMode && !isSingleWordOrGreeting && isEnglish && extractedCorrectedText) {
       // LLM detected an error (via [CORRECTED:] tag) that regex engine missed
       const norm = (s: string) => s.replace(/[.!?，。？！…\s]+$/g, '').toLowerCase().trim()
       if (norm(extractedCorrectedText) !== norm(userMessage)) {
         try {
-          await supabase.from('error_records').insert({
+          const { error: insertErr } = await safeInsertErrorRecord(supabase, {
             user_id: userId,
             session_id: sessionId,
             original_text: userMessage,
@@ -1101,6 +1144,9 @@ ${conversationSoFar}
             explanation: `"${userMessage}" 表达不够地道。更自然的说法是"${extractedCorrectedText}"。英语母语者通常会这样说。`,
             review_scenario: `假设你正在和一个英语母语的朋友聊天，请用修正后的表达再说一遍，试着让对话更自然。`,
           })
+          if (insertErr) {
+            console.error('[Error Records LLM Fallback Failed]:', insertErr)
+          }
         } catch (dbErr) {
           console.error('[Error Records LLM Fallback Failed]:', dbErr)
         }
@@ -1108,11 +1154,11 @@ ${conversationSoFar}
     }
 
     // --- 8.6 为错误创建星图发现记录（点亮星座节点） ---
-    const hadError = (isEnglish && englishDiag && englishDiag.errorsInResponse.length > 0) ||
+    const hadError = !isReviewMode && !isSingleWordOrGreeting && ((isEnglish && englishDiag && englishDiag.errorsInResponse.length > 0) ||
       (isEnglish && extractedCorrectedText && (() => {
         const norm = (s: string) => s.replace(/[.!?，。？！…\s]+$/g, '').toLowerCase().trim()
         return norm(extractedCorrectedText) !== norm(userMessage)
-      })())
+      })()))
     if (hadError && activeNodeId) {
       try {
         const errorType = englishDiag?.errorsInResponse?.[0]?.errorType || 'expression-chinglish'
@@ -1177,8 +1223,8 @@ ${conversationSoFar}
       isAssessmentCompleted: activeIsAssessment && assistantMsgCount >= 4,
       isResolved,
       resolvedText,
-      resolvedStage: isResolved ? (targetErrorStage + 1) : undefined,
-      reviewStage: (isReviewMode && targetErrorToReview) ? (targetErrorStage + 1) : undefined,
+      resolvedStage: (isReviewMode && isResolved) ? 2 : (isResolved ? (targetErrorStage + 1) : undefined),
+      reviewStage: (isReviewMode && targetErrorToReview) ? 2 : (targetErrorStage + 1),
       challengeTask: isTask && isEnglish ? {
         id: taskId,
         instruction: challengeInstruction,
@@ -1192,6 +1238,65 @@ ${conversationSoFar}
       { status: 500 }
     )
   }
+}
+
+// ============================================================
+// Safe Database Helper Wrappers (Handles missing remote columns)
+// ============================================================
+async function safeInsertErrorRecord(supabase: any, record: any) {
+  const { data, error } = await supabase
+    .from('error_records')
+    .insert(record)
+    .select();
+  
+  if (error && (error.message.includes('column') || error.message.includes('schema cache'))) {
+    console.warn('[Supabase] Column error during insert, retrying without explanation/review_scenario...');
+    const { explanation, review_scenario, ...cleanRecord } = record;
+    return await supabase
+      .from('error_records')
+      .insert(cleanRecord)
+      .select();
+  }
+  return { data, error };
+}
+
+async function safeInsertErrorRecords(supabase: any, records: any[]) {
+  const { data, error } = await supabase
+    .from('error_records')
+    .insert(records)
+    .select();
+  
+  if (error && (error.message.includes('column') || error.message.includes('schema cache'))) {
+    console.warn('[Supabase] Column error during batch insert, retrying without explanation/review_scenario...');
+    const cleanRecords = records.map(r => {
+      const { explanation, review_scenario, ...clean } = r;
+      return clean;
+    });
+    return await supabase
+      .from('error_records')
+      .insert(cleanRecords)
+      .select();
+  }
+  return { data, error };
+}
+
+async function safeUpdateErrorRecord(supabase: any, recordId: string, updates: any) {
+  const { data, error } = await supabase
+    .from('error_records')
+    .update(updates)
+    .eq('id', recordId)
+    .select();
+  
+  if (error && (error.message.includes('column') || error.message.includes('schema cache'))) {
+    console.warn('[Supabase] Column error during update, retrying without explanation/review_scenario...');
+    const { explanation, review_scenario, ...cleanUpdates } = updates;
+    return await supabase
+      .from('error_records')
+      .update(cleanUpdates)
+      .eq('id', recordId)
+      .select();
+  }
+  return { data, error };
 }
 
 function getFriendlyErrorName(type: string): string {

@@ -17,7 +17,7 @@ export interface SessionStore {
 
   // --- 会话 ---
   session: LearningSession | null
-  setSession: (session: LearningSession) => void
+  setSession: (session: LearningSession | null) => void
   updateSession: (updates: Partial<LearningSession>) => void
   
   // --- 照片 ---

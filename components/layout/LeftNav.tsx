@@ -67,7 +67,7 @@ export function LeftNav() {
       className="fixed left-0 top-0 w-24 h-full z-50 flex items-center justify-center bg-transparent pointer-events-auto group/strip cursor-ns-resize"
     >
       {/* Visual Dot Ticks bar */}
-      <div className="flex flex-col gap-5 items-center opacity-30 group-hover/strip:opacity-100 transition-opacity duration-300">
+      <div className="flex flex-col gap-5 items-center opacity-70 md:opacity-30 md:group-hover/strip:opacity-100 transition-opacity duration-300">
         {tabs.map((tab) => {
           const isActive = activeSection === tab.name;
           return (

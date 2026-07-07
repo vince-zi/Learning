@@ -132,6 +132,8 @@ export interface LearningSession {
   startedAt: string
   completedAt?: string
   questioningStyle?: 'gentle' | 'sharp' | 'action'
+  currentKnowledgeNodeId?: string
+  knowledgeNodeId?: string
   metadata?: SessionMetadata
 }
 

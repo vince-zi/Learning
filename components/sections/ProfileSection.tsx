@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Target, Activity, Zap, Clipboard, Check, Sparkles, AlertCircle } from 'lucide-react';
 import { supabase } from '@/lib/db/supabase-client';
+import { useSessionStore } from '@/store/session-store';
 
 function getFriendlyErrorName(type: string): string {
   const names: Record<string, string> = {
@@ -24,6 +25,7 @@ function getFriendlyErrorName(type: string): string {
 }
 
 export function ProfileSection() {
+  const { activeSection } = useSessionStore();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
   const [focusDays, setFocusDays] = useState(0);
@@ -31,8 +33,11 @@ export function ProfileSection() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    if (activeSection !== 'profile') return;
+
     let mounted = true;
     const loadProfileData = async () => {
+      setLoading(true);
       try {
         const userId = localStorage.getItem('learniny_user_id') || 'mock_user';
         
@@ -59,18 +64,21 @@ export function ProfileSection() {
           .gte('created_at', oneWeekAgo.toISOString());
 
         let pointsList: string[] = [];
-        if (weekErrors && weekErrors.length > 0) {
-          pointsList = Array.from(new Set(weekErrors.map(e => getFriendlyErrorName(e.error_type))));
-        } else {
-          // 兜底：所有历史错误
-          const { data: allErrors } = await supabase
-            .from('error_records')
-            .select('error_type')
-            .eq('user_id', userId)
-            .limit(30);
-          if (allErrors && allErrors.length > 0) {
-            pointsList = Array.from(new Set(allErrors.map(e => getFriendlyErrorName(e.error_type))));
+        if (mounted) {
+          if (weekErrors && weekErrors.length > 0) {
+            pointsList = Array.from(new Set(weekErrors.map(e => getFriendlyErrorName(e.error_type))));
+          } else {
+            // 兜底：所有历史错误
+            const { data: allErrors } = await supabase
+              .from('error_records')
+              .select('error_type')
+              .eq('user_id', userId)
+              .limit(30);
+            if (allErrors && allErrors.length > 0) {
+              pointsList = Array.from(new Set(allErrors.map(e => getFriendlyErrorName(e.error_type))));
+            }
           }
+          setGrammarPoints(pointsList);
         }
 
         // 4. 获取未解决的错误以作为薄弱环节兜底
@@ -149,7 +157,7 @@ export function ProfileSection() {
 
     loadProfileData();
     return () => { mounted = false; };
-  }, []);
+  }, [activeSection]);
 
   const cefr = profile?.cefr_level || 'A1';
   

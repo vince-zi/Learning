@@ -260,7 +260,7 @@ function MessageBubble({
 }
 
 export function PracticeSection() {
-  const { messages, addMessage, isThinking, setThinking } = useSessionStore();
+  const { messages, addMessage, isThinking, setThinking, session, setSession } = useSessionStore();
   
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [lastSessionId, setLastSessionId] = useState<string | null>(null);
@@ -271,12 +271,15 @@ export function PracticeSection() {
   const lastUserMsgIdRef = useRef<string | null>(null);
   const [msgExtras, setMsgExtras] = useState<Record<string, { _errorType?: string; _correctedText?: string; _hintText?: string }>>({});
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isEndingSession, setIsEndingSession] = useState(false);
+  const [summaryData, setSummaryData] = useState<any | null>(null);
 
   // Retrieve last session ID from local storage on mount
   useEffect(() => {
     const saved = localStorage.getItem('learniny_last_session_id');
     if (saved) {
       setLastSessionId(saved);
+      loadSessionMessages(saved);
     }
   }, []);
 
@@ -296,6 +299,9 @@ export function PracticeSection() {
           return;
         }
         setActiveSessionId(sessId);
+        if (data.session) {
+          setSession(data.session);
+        }
         if (data.messages && data.messages.length > 0) {
           useSessionStore.getState().setMessages(data.messages);
         } else {
@@ -324,9 +330,7 @@ export function PracticeSection() {
         if (data.success && data.session) {
           const sessId = data.session.id;
           setActiveSessionId(sessId);
-          localStorage.setItem('learniny_last_session_id', sessId);
-          localStorage.setItem('learniny_user_id', 'mock_user');
-          setLastSessionId(sessId);
+          setSession(data.session);
           useSessionStore.getState().setMessages([]);
         }
       })
@@ -359,6 +363,49 @@ export function PracticeSection() {
       return () => clearTimeout(timer);
     }
   }, [expandedDiffId]);
+  
+  // Trigger greeting automatically when starting a new session or loading an empty session
+  useEffect(() => {
+    if (activeSessionId && messages.length === 0 && !isThinking && !isInitializing) {
+      let active = true;
+      const sendInitSignal = async () => {
+        setThinking(true);
+        try {
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: activeSessionId,
+              userId: 'mock_user',
+              userMessage: '[INIT_FREE_CONVERSATION]',
+              module: 'english',
+              roundNumber: 1,
+            }),
+          });
+          if (!res.ok) throw new Error('Init API request failed');
+          const data = await res.json();
+          if (active && data.success && data.message) {
+            addMessage({
+              id: `assistant_init_${Date.now()}`,
+              sessionId: activeSessionId,
+              role: 'assistant',
+              messageType: 'question',
+              content: data.message.content,
+              createdAt: new Date().toISOString(),
+            });
+          }
+        } catch (err) {
+          console.error('Failed to send init signal:', err);
+        } finally {
+          if (active) setThinking(false);
+        }
+      };
+      sendInitSignal();
+      return () => {
+        active = false;
+      };
+    }
+  }, [activeSessionId, messages.length, isInitializing]);
 
   const handleInputFocus = () => {
     for (const delay of [100, 250, 450]) {
@@ -375,7 +422,14 @@ export function PracticeSection() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !activeSessionId) return;
+    if (useSessionStore.getState().isThinking || !input.trim() || !activeSessionId) return;
+
+    // Save session ID to localStorage ONLY when user actually sends a message!
+    if (localStorage.getItem('learniny_last_session_id') !== activeSessionId) {
+      localStorage.setItem('learniny_last_session_id', activeSessionId);
+      localStorage.setItem('learniny_user_id', 'mock_user');
+      setLastSessionId(activeSessionId);
+    }
 
     const userText = input;
     const userMsgId = `user_${Date.now()}`;
@@ -462,6 +516,10 @@ export function PracticeSection() {
           });
         }
 
+        if (data.currentKnowledgeNodeId && session) {
+          setSession({ ...session, currentKnowledgeNodeId: data.currentKnowledgeNodeId });
+        }
+
         addMessage({
           id: aiMsgId,
           sessionId: activeSessionId,
@@ -483,6 +541,54 @@ export function PracticeSection() {
     ...(msgExtras[msg.id] || {}),
   }));
 
+  const handleEndSession = async () => {
+    if (!activeSessionId || isEndingSession) return;
+    setIsEndingSession(true);
+    try {
+      const userId = localStorage.getItem('learniny_user_id') || 'mock_user';
+      // 1. 调用 POST /api/discoveries 自动抽提学习发现与评估，点亮星图
+      const res = await fetch('/api/discoveries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: activeSessionId,
+          userId,
+          knowledgeNodeId: session?.currentKnowledgeNodeId || 'self-intro',
+          module: 'english',
+        }),
+      });
+
+      let discoveryData = null;
+      if (res.ok) {
+        discoveryData = await res.json();
+      }
+
+      // 2. 调用 PATCH /api/sessions 归档会话
+      await fetch('/api/sessions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: activeSessionId }),
+      });
+
+      if (discoveryData && discoveryData.success) {
+        setSummaryData(discoveryData);
+      } else {
+        localStorage.removeItem('learniny_last_session_id');
+        setLastSessionId(null);
+        setActiveSessionId(null);
+        setSession(null);
+      }
+    } catch (err) {
+      console.error('Error during ending session:', err);
+      localStorage.removeItem('learniny_last_session_id');
+      setLastSessionId(null);
+      setActiveSessionId(null);
+      setSession(null);
+    } finally {
+      setIsEndingSession(false);
+    }
+  };
+
   return (
     <div className="w-full h-full flex flex-col pt-24 pb-0 items-center justify-center pointer-events-auto">
       <div className="max-w-2xl w-full h-full flex flex-col relative overflow-hidden">
@@ -497,23 +603,14 @@ export function PracticeSection() {
             <p className="text-sm text-text-secondary leading-relaxed mb-8">
               不提供直接的答案，而是在自然对话中通过启发式提问，引导你自我发现英语的句法规律与表达直觉。
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 w-full">
+            <div className="flex flex-col gap-4 w-full max-w-xs mx-auto">
               <button 
                 onClick={handleStartNewSession}
                 disabled={isInitializing}
-                className="flex-1 px-6 py-3.5 bg-brand-accent text-[#000000] text-xs font-bold tracking-widest uppercase hover:scale-105 transition-transform rounded-full shadow-[0_0_20px_rgba(0,255,157,0.2)] disabled:opacity-55 cursor-pointer"
+                className="w-full px-6 py-3.5 bg-brand-accent text-[#000000] text-xs font-bold tracking-widest uppercase hover:scale-105 transition-transform rounded-full shadow-[0_0_20px_rgba(0,255,157,0.2)] disabled:opacity-55 cursor-pointer text-center"
               >
                 {isInitializing ? '启动中...' : '开启新对话'}
               </button>
-              {lastSessionId && (
-                <button 
-                  onClick={handleResumeLastSession}
-                  disabled={isInitializing}
-                  className="flex-1 px-6 py-3.5 bg-surface-card border border-divider hover:border-text-secondary text-text-primary text-xs font-bold tracking-widest uppercase hover:scale-105 transition-transform rounded-full disabled:opacity-55 cursor-pointer"
-                >
-                  {isInitializing ? '载入中...' : '继续上次对话'}
-                </button>
-              )}
             </div>
           </div>
         ) : (
@@ -523,17 +620,11 @@ export function PracticeSection() {
             <div className="absolute top-0 left-0 right-0 z-20 flex justify-between items-center px-4 md:px-8 py-3 bg-gradient-to-b from-app-bg via-app-bg/95 to-transparent">
               <span className="text-[10px] text-text-secondary font-mono tracking-widest uppercase">ZPD Session Active</span>
               <button
-                onClick={async () => {
-                  if (activeSessionId) {
-                    try { await fetch('/api/sessions', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: activeSessionId }) }) } catch {}
-                    localStorage.removeItem('learniny_last_session_id');
-                    setLastSessionId(null);
-                  }
-                  setActiveSessionId(null);
-                }}
-                className="text-[9px] text-brand-error/70 hover:text-brand-error tracking-wider uppercase font-mono transition-colors cursor-pointer"
+                onClick={handleEndSession}
+                disabled={isEndingSession}
+                className="text-[9px] text-brand-error/70 hover:text-brand-error tracking-wider uppercase font-mono transition-colors cursor-pointer disabled:opacity-50"
               >
-                结束对话
+                {isEndingSession ? '正在结算星图...' : '结束对话'}
               </button>
             </div>
 
@@ -599,6 +690,86 @@ export function PracticeSection() {
         )}
 
       </div>
+
+      <AnimatePresence>
+        {summaryData && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xl p-4 md:p-8 pointer-events-auto">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="w-full max-w-lg bg-[#0D0D0D] border border-brand-accent/20 rounded-3xl p-6 md:p-8 flex flex-col gap-6 shadow-[0_0_50px_rgba(0,255,157,0.15)] relative overflow-hidden"
+            >
+              {/* Ambient glowing background orb */}
+              <div className="absolute -top-24 -left-24 w-48 h-48 rounded-full bg-brand-accent/10 blur-[80px] pointer-events-none" />
+              <div className="absolute -bottom-24 -right-24 w-48 h-48 rounded-full bg-brand-accent/5 blur-[80px] pointer-events-none" />
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-brand-accent text-xs font-mono tracking-widest uppercase">
+                  <Sparkles className="w-4 h-4 animate-pulse text-brand-accent" />
+                  <span>今日学习发现报告</span>
+                </div>
+                <h3 className="text-xl font-display text-text-primary tracking-wide leading-snug">
+                  {summaryData.title || '探索新语法与语感表达'}
+                </h3>
+              </div>
+
+              <div className="h-px bg-divider" />
+
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[10px] text-text-secondary uppercase font-mono tracking-wider">发现点核心解析</span>
+                  <p className="text-sm text-text-secondary leading-relaxed bg-[#121212] border border-divider rounded-2xl p-4">
+                    {summaryData.summary || '你在今天的对话中成功应用了多项表达，并在对话引导中发现并修正了细微句法盲点。'}
+                  </p>
+                </div>
+
+                {summaryData.insight && (
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] text-text-secondary uppercase font-mono tracking-wider">你的学习感悟</span>
+                    <p className="text-xs text-brand-accent/80 italic leading-relaxed bg-brand-accent/5 border border-brand-accent/25 rounded-2xl p-4">
+                      “ {summaryData.insight} ”
+                    </p>
+                  </div>
+                )}
+
+                {summaryData.tags && summaryData.tags.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] text-text-secondary uppercase font-mono tracking-wider">星图技能标签</span>
+                    <div className="flex flex-wrap gap-2">
+                      {summaryData.tags.map((tag: string, idx: number) => (
+                        <span 
+                          key={idx}
+                          className="px-3 py-1 bg-brand-accent/10 border border-brand-accent/20 rounded-full text-[10px] text-brand-accent tracking-wider font-medium"
+                        >
+                          # {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="h-px bg-divider" />
+
+              <div className="flex flex-col sm:flex-row gap-4">
+                <button
+                  onClick={() => {
+                    setSummaryData(null);
+                    localStorage.removeItem('learniny_last_session_id');
+                    setLastSessionId(null);
+                    setActiveSessionId(null);
+                    setSession(null);
+                  }}
+                  className="flex-1 px-6 py-3 bg-brand-accent text-[#000000] text-xs font-bold tracking-widest uppercase rounded-full hover:scale-105 transition-transform shadow-[0_0_20px_rgba(0,255,157,0.1)] cursor-pointer"
+                >
+                  确认并返回主页
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

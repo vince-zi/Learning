@@ -18,6 +18,8 @@ export function DiscoverySection() {
   }, [activeSection, setIs3DMode]);
 
   useEffect(() => {
+    if (activeSection !== 'discovery') return;
+
     const userId = localStorage.getItem('learniny_user_id') || 'mock_user';
     if (!userId) {
       setIsLoading(false);
@@ -25,6 +27,7 @@ export function DiscoverySection() {
     }
 
     async function fetchData() {
+      setIsLoading(true);
       try {
         const { data } = await supabase
           .from('discoveries')
@@ -40,7 +43,7 @@ export function DiscoverySection() {
       }
     }
     fetchData();
-  }, []);
+  }, [activeSection]);
 
   const totalDiscoveries = discoveries.length;
 
@@ -278,15 +281,26 @@ export function DiscoverySection() {
                     <div className="flex-1 overflow-y-auto pr-1 space-y-3.5 scrollbar-none">
                       {displayedDiscoveries.length === 0 ? (
                         <div className="text-center text-text-secondary/40 py-12 text-xs font-mono">
-                          {selectedNodeId ? '此节点暂无掌握记录，继续练习吧！' : 'NO RECORDS'}
+                          {selectedNodeId ? '此节点暂无掌握记录，继续练习吧！' : '暂无学习发现记录，快去对话练习吧！'}
                         </div>
                       ) : (
                         displayedDiscoveries.map((disc) => (
-                          <div key={disc.id} className="p-3.5 rounded-2xl bg-surface-ai/60 border border-divider hover:border-brand-accent/30 transition-colors">
-                            <p className="text-xs text-text-primary mb-2 font-light leading-relaxed">“{disc.original_text}”</p>
-                            <p className="text-[10px] text-brand-hint/90 font-mono leading-relaxed bg-surface-card/45 p-2 rounded-lg border border-divider/50">
-                              {disc.discovery_summary}
+                          <div key={disc.id} className="p-3.5 rounded-2xl bg-surface-ai/60 border border-divider hover:border-brand-accent/30 transition-colors flex flex-col gap-2">
+                            <div className="text-xs font-semibold text-text-primary tracking-wide">
+                              {disc.title || '探索语法概念'}
+                            </div>
+                            <p className="text-[11px] text-text-secondary leading-relaxed bg-surface-card/45 p-2.5 rounded-xl border border-divider/50">
+                              {disc.summary || '暂无详细分析内容'}
                             </p>
+                            {disc.tags && disc.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mt-0.5">
+                                {disc.tags.map((t: string, i: number) => (
+                                  <span key={i} className="text-[9px] font-mono text-brand-accent/80 bg-brand-accent/5 px-2 py-0.5 rounded-full border border-brand-accent/15">
+                                    #{t}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         ))
                       )}
