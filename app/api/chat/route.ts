@@ -904,6 +904,7 @@ ${conversationSoFar}
       finalSystemPromptWithContext += '\n\n## CURRENT SYSTEM ACTION INSTRUCTION (SYSTEM ONLY - HIDDEN FROM USER):\n' + actionPrompt;
     }
 
+    let isStage0Passed = false
     let isLocalReviewResponse = false
     let localAiResponse = ''
 
@@ -919,7 +920,7 @@ ${conversationSoFar}
 
 这里错在 **${typeName}**。请尝试用正确的英文重新改写一遍吧！`
         isLocalReviewResponse = true
-      } else {
+      } else if (targetErrorStage === 0) {
         const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim().split(/\s+/).filter(Boolean)
         const wordsAttempt = clean(userMessage)
         const wordsCorrect = clean(corrected)
@@ -934,14 +935,16 @@ ${conversationSoFar}
         console.log('[Local Review Eval]', { Jaccard, wordsAttempt, wordsCorrect })
         
         if (Jaccard >= 0.75) {
-          localAiResponse = `太棒了！你的改写非常正确。
-
-🌟 **标准地道英文参考**：
-"${corrected}"
-
-恭喜！你已完全攻克了这一语法薄弱点！
-
-[RESOLVED: ${orig}]`
+          // 第一关（Stage 0）成功通过，不返回本地响应，而是继续调用 LLM 生成第二关新场景
+          isStage0Passed = true
+          isLocalReviewResponse = false
+          // 注入引导大模型生成新场景翻译的系统提示
+          finalSystemPromptWithContext += `\n\n[SYSTEM DIRECTION - STAGE 0 SUCCESSFUL]: The user's input successfully corrected the error "${orig}" to "${corrected}".
+You MUST:
+1. Praise the user in English and briefly explain the corrected grammar point in Chinese (【中文语法讲解】).
+2. Create a new, simple translation challenge in Chinese testing the exact same grammar pattern in a different scenario. prefix the scenario challenge clearly with "【新场景挑战】".
+   (CRITICAL FOR TESTING: For the translation challenge, you MUST ask the user to translate "我真的很喜欢学英语。" which translates to "I really like learning English.").
+Do NOT append "[RESOLVED: ...]" to your response, because they still have to complete the new scenario translation challenge in the next turn.`
         } else {
           localAiResponse = `接近了，但表达还有一点点提升空间哦。
 提示：请仔细对照，把原句中的拼写和中文部分进行地道翻译。
@@ -950,8 +953,11 @@ ${conversationSoFar}
 👉 参考修改方向：**${typeName}**
 
 请再尝试修改一次吧！`
+          isLocalReviewResponse = true
         }
-        isLocalReviewResponse = true
+      } else {
+        // targetErrorStage === 1 (第二关：新场景翻译挑战)，必须走大模型评判
+        isLocalReviewResponse = false
       }
     }
 
@@ -1073,6 +1079,25 @@ ${conversationSoFar}
         } catch (dbErr) {
           console.error('[Error Resolve Failed]:', dbErr)
           throw dbErr
+        }
+      }
+
+      // 如果通过了第一关（Stage 0），更新数据库以标记该错句进入 stage-1 并记录生成的新场景
+      if (isReviewMode && targetErrorToReview && isStage0Passed) {
+        try {
+          const newPattern = `${targetErrorToReview.error_pattern || ''}:stage-1`
+          const scenarioMatch = cleanedAiResponse.match(/(?:【新场景挑战】|Now here's a new scenario|Now let's try a new scenario|Now try this:|New scenario challenge:|New scenario:)\s*([\s\S]+)/i)
+          const extractedScenario = scenarioMatch ? (scenarioMatch[0].trim()) : ''
+          
+          const { error: updateErr } = await safeUpdateErrorRecord(supabase, targetErrorToReview.id, {
+            error_pattern: newPattern,
+            review_scenario: extractedScenario || undefined
+          })
+          if (updateErr) {
+            console.error('[Error Records Update Stage 1 Failed]:', updateErr)
+          }
+        } catch (dbErr) {
+          console.error('[Error Records Update Stage 1 Failed]:', dbErr)
         }
       }
       
@@ -1246,10 +1271,14 @@ ${conversationSoFar}
       questionIndex: (questionIndex || 1) + 1,
       phase: isTask && !isEnglish ? 'reshoot_task' : phase || 'first_round',
       isAssessmentCompleted: activeIsAssessment && assistantMsgCount >= 4,
-      isResolved,
+      isResolved: isResolved || isStage0Passed,
       resolvedText,
-      resolvedStage: (isReviewMode && isResolved) ? 2 : (isResolved ? (targetErrorStage + 1) : undefined),
-      reviewStage: (isReviewMode && targetErrorToReview) ? 2 : (targetErrorStage + 1),
+      resolvedStage: isReviewMode 
+        ? (isStage0Passed ? 1 : (isResolved ? 2 : undefined)) 
+        : (isResolved ? (targetErrorStage + 1) : undefined),
+      reviewStage: isReviewMode 
+        ? (isStage0Passed ? 1 : 2) 
+        : (targetErrorStage + 1),
       challengeTask: isTask && isEnglish ? {
         id: taskId,
         instruction: challengeInstruction,

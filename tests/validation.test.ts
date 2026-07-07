@@ -298,7 +298,7 @@ describe('Learniny System Core Flow Validation', () => {
       assert('Rewrite Rejected', !isResolved, false, isResolved);
     });
 
-    it('should accept correct rewrite', async () => {
+    it('should accept correct rewrite (Stage 1)', async () => {
       console.log('✅ Testing correct rewrite acceptance...');
       
       const response = await apiRequest('/api/chat', 'POST', {
@@ -311,6 +311,27 @@ describe('Learniny System Core Flow Validation', () => {
       
       const isResolved = response.isResolved === true;
       assert('Rewrite Accepted', isResolved, true, isResolved);
+      
+      if (isResolved) {
+        console.log(`✨ Error resolved at stage: ${response.resolvedStage}`);
+      }
+      
+      assert('Resolved Stage is 1', response.resolvedStage === 1, 1, response.resolvedStage);
+    });
+
+    it('should accept correct translation in new scenario (Stage 2)', async () => {
+      console.log('✅ Testing new scenario translation...');
+      
+      const response = await apiRequest('/api/chat', 'POST', {
+        sessionId: reviewSessionId,
+        userId: TEST_USER_ID,
+        userMessage: 'I really like learning English.',
+        isEnglish: true,
+        reviewStage: 1
+      });
+      
+      const isResolved = response.isResolved === true;
+      assert('Translation Accepted', isResolved, true, isResolved);
       
       if (isResolved) {
         console.log(`✨ Error resolved at stage: ${response.resolvedStage}`);

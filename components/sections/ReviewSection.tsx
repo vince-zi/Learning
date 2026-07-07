@@ -285,9 +285,9 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
         </div>
 
         <div style={{ display: "flex", alignItems: "center", marginBottom: 22 }}>
-          {["消除这道错题"].map((label, idx) => (
+          {["第一关 · 纠正原句", "第二关 · 新场景重测"].map((label, idx) => (
             <React.Fragment key={idx}>
-              <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                 <div
                   style={{
                     width: 26,
@@ -296,26 +296,30 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    background: stage === 2 ? tokens.gold : tokens.tealSoft,
-                    border: stage !== 2 ? `1.5px solid ${tokens.teal}` : "none",
-                    color: stage === 2 ? "#181410" : tokens.teal,
+                    background: stepDone(idx) ? tokens.gold : stage === idx ? tokens.tealSoft : "#ffffff10",
+                    border: stage === idx ? `1.5px solid ${tokens.teal}` : "none",
+                    color: stepDone(idx) ? "#181410" : tokens.textSecondary,
                     fontSize: 12,
                     fontWeight: 600,
                   }}
                 >
-                  {stage === 2 ? <Check size={13} /> : idx + 1}
+                  {stepDone(idx) ? <Check size={13} /> : idx + 1}
                 </div>
                 <div
                   style={{
-                    fontFamily: "Inter, sans-serif",
-                    fontSize: 13,
-                    color: stage === 2 ? tokens.gold : tokens.textPrimary,
-                    fontWeight: 500,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: 9,
+                    color: stage === idx ? tokens.textPrimary : tokens.textSecondary,
+                    textAlign: "center",
+                    width: 74,
                   }}
                 >
                   {label}
                 </div>
               </div>
+              {idx === 0 && (
+                <div style={{ flex: 1, height: 1.5, background: stepDone(0) ? tokens.gold : tokens.divider, margin: "0 4px 18px" }} />
+              )}
             </React.Fragment>
           ))}
         </div>
@@ -492,7 +496,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
               }}
             >
               {isLoading && <Loader2 size={16} className="animate-spin" />}
-              提交并消除错题
+              {stage === 0 ? "提交，进入第二关" : "提交，完成消灭"}
             </button>
           </>
         ) : (
@@ -515,7 +519,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
               已消灭
             </div>
             <div style={{ fontSize: 13, color: tokens.textSecondary, marginBottom: 20 }}>
-              你已完美纠正了该错句，已成功掌握！
+              这个错误已从两个不同场景中验证掌握
             </div>
             <button
               onClick={onClose}
