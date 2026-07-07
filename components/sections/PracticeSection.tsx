@@ -584,12 +584,13 @@ export function PracticeSection() {
       clearTimeout(safetyTimeout);
 
       if (discoveryData && discoveryData.success) {
-        setSummaryData(discoveryData);
+        setSummaryData(discoveryData.discovery);
       } else {
         localStorage.removeItem('learniny_last_session_id');
         setLastSessionId(null);
         setActiveSessionId(null);
         setSession(null);
+        useSessionStore.getState().setActiveSection('home');
       }
     } catch (err) {
       console.error('Error during ending session:', err);
@@ -598,6 +599,7 @@ export function PracticeSection() {
       setLastSessionId(null);
       setActiveSessionId(null);
       setSession(null);
+      useSessionStore.getState().setActiveSection('home');
     } finally {
       setIsEndingSession(false);
     }
@@ -775,6 +777,7 @@ export function PracticeSection() {
                     setLastSessionId(null);
                     setActiveSessionId(null);
                     setSession(null);
+                    useSessionStore.getState().setActiveSection('home');
                   }}
                   className="flex-1 px-6 py-3 bg-brand-accent text-[#000000] text-xs font-bold tracking-widest uppercase rounded-full hover:scale-105 transition-transform shadow-[0_0_20px_rgba(0,255,157,0.1)] cursor-pointer"
                 >

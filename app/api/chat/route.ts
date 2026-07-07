@@ -920,7 +920,7 @@ ${conversationSoFar}
 这里错在 **${typeName}**。请尝试用正确的英文重新改写一遍吧！`
         isLocalReviewResponse = true
       } else {
-        const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().split(/\s+/).filter(Boolean)
+        const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim().split(/\s+/).filter(Boolean)
         const wordsAttempt = clean(userMessage)
         const wordsCorrect = clean(corrected)
         const setAttempt = new Set(wordsAttempt)
