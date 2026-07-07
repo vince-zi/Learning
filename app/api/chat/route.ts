@@ -17,6 +17,17 @@ import { photographyKnowledgeGraph } from '@/core/knowledge-graph/photography-gr
 import { englishKnowledgeGraph } from '@/core/knowledge-graph/english-graph'
 import { v4 as uuidv4 } from 'uuid'
 
+const LOCAL_TRANSLATION_CHALLENGES: Record<string, { cn: string; en: string }> = {
+  'grammar-tense': { cn: '我昨天去了一家很棒的餐厅。', en: 'I went to a great restaurant yesterday' },
+  'grammar-article': { cn: '这是一本非常有趣的书。', en: 'This is a very interesting book' },
+  'grammar-preposition': { cn: '我们讨论了这个问题。', en: 'We discussed this problem' },
+  'grammar-word-order': { cn: '我不喜欢学英语。', en: "I don't like to learn English" },
+  'grammar-agreement': { cn: '他每天都去图书馆学习。', en: 'He goes to the library to study every day' },
+  'vocabulary-choice': { cn: '这是一部非常好看的电影。', en: 'This is a very good movie' },
+  'expression-chinglish': { cn: '我真的很喜欢学英语。', en: 'I really like learning English' },
+  'expression-incomplete': { cn: '对不起，我不知道。', en: "Sorry, I don't know" },
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()
@@ -932,19 +943,33 @@ ${conversationSoFar}
         }
         const union = new Set([...wordsAttempt, ...wordsCorrect]).size;
         const Jaccard = union === 0 ? 0 : (intersection / union);
-        console.log('[Local Review Eval]', { Jaccard, wordsAttempt, wordsCorrect })
+        console.log('[Local Review Eval Stage 0]', { Jaccard, wordsAttempt, wordsCorrect })
         
         if (Jaccard >= 0.75) {
-          // 第一关（Stage 0）成功通过，不返回本地响应，而是继续调用 LLM 生成第二关新场景
           isStage0Passed = true
-          isLocalReviewResponse = false
-          // 注入引导大模型生成新场景翻译的系统提示
-          finalSystemPromptWithContext += `\n\n[SYSTEM DIRECTION - STAGE 0 SUCCESSFUL]: The user's input successfully corrected the error "${orig}" to "${corrected}".
-You MUST:
-1. Praise the user in English and briefly explain the corrected grammar point in Chinese (【中文语法讲解】).
-2. Create a new, simple translation challenge in Chinese testing the exact same grammar pattern in a different scenario. prefix the scenario challenge clearly with "【新场景挑战】".
-   (CRITICAL FOR TESTING: For the translation challenge, you MUST ask the user to translate "我真的很喜欢学英语。" which translates to "I really like learning English.").
-Do NOT append "[RESOLVED: ...]" to your response, because they still have to complete the new scenario translation challenge in the next turn.`
+          
+          const errKey = targetErrorToReview.error_type || 'expression-chinglish'
+          const challenge = LOCAL_TRANSLATION_CHALLENGES[errKey] || LOCAL_TRANSLATION_CHALLENGES['expression-chinglish']
+          
+          // 更新数据库，将错句推进到 stage-1，并更新为挑战题目与对应的正确翻译
+          const newPattern = `${targetErrorToReview.error_pattern || ''}:stage-1`
+          await safeUpdateErrorRecord(supabase, targetErrorToReview.id, {
+            error_pattern: newPattern,
+            review_scenario: `【新场景挑战】请用英文翻译以下句子：“${challenge.cn}”`,
+            corrected_text: challenge.en
+          })
+
+          localAiResponse = `答对啦！成功通过第一关，进入第二关。
+          
+🌟 **原句纠正参考**：
+"${corrected}"
+
+下面进入第二关，请挑战在全新场景下应用该语法点。
+
+👉 **【新场景挑战】**：
+请将以下句子翻译为英文：
+“${challenge.cn}”`
+          isLocalReviewResponse = true
         } else {
           localAiResponse = `接近了，但表达还有一点点提升空间哦。
 提示：请仔细对照，把原句中的拼写和中文部分进行地道翻译。
@@ -955,9 +980,47 @@ Do NOT append "[RESOLVED: ...]" to your response, because they still have to com
 请再尝试修改一次吧！`
           isLocalReviewResponse = true
         }
-      } else {
-        // targetErrorStage === 1 (第二关：新场景翻译挑战)，必须走大模型评判
-        isLocalReviewResponse = false
+      } else if (targetErrorStage === 1) {
+        const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim().split(/\s+/).filter(Boolean)
+        const wordsAttempt = clean(userMessage)
+        const wordsCorrect = clean(corrected)
+        const setAttempt = new Set(wordsAttempt)
+        const setCorrect = new Set(wordsCorrect)
+        let intersection = 0;
+        for (const w of setAttempt) {
+          if (setCorrect.has(w)) intersection++;
+        }
+        const union = new Set([...wordsAttempt, ...wordsCorrect]).size;
+        const Jaccard = union === 0 ? 0 : (intersection / union);
+        console.log('[Local Review Eval Stage 1]', { Jaccard, wordsAttempt, wordsCorrect })
+        
+        if (Jaccard >= 0.75) {
+          // 第二关通过，直接将其消除
+          const { error: updateErr } = await safeUpdateErrorRecord(supabase, targetErrorToReview.id, { noted_by_user: true })
+          if (updateErr) {
+            console.error('[Error Records Update Failed]:', updateErr)
+            throw new Error(`Database update failed: ${updateErr.message}`)
+          }
+          
+          localAiResponse = `太棒了！你的翻译非常正确。
+
+🌟 **标准地道英文参考**：
+"${corrected}"
+
+恭喜！你已完全攻克了这一语法薄弱点！
+
+[RESOLVED: ${orig}]`
+          isLocalReviewResponse = true
+        } else {
+          localAiResponse = `接近了，但表达还有一点点提升空间哦。
+提示：请仔细对照，把原句中的拼写和中文部分进行地道翻译。
+
+👉 翻译题目：**“${targetErrorToReview.review_scenario || '请用正确表达回答'}”**
+👉 参考修改方向：**${typeName}**
+
+请再尝试修改一次吧！`
+          isLocalReviewResponse = true
+        }
       }
     }
 
@@ -1082,24 +1145,7 @@ Do NOT append "[RESOLVED: ...]" to your response, because they still have to com
         }
       }
 
-      // 如果通过了第一关（Stage 0），更新数据库以标记该错句进入 stage-1 并记录生成的新场景
-      if (isReviewMode && targetErrorToReview && isStage0Passed) {
-        try {
-          const newPattern = `${targetErrorToReview.error_pattern || ''}:stage-1`
-          const scenarioMatch = cleanedAiResponse.match(/(?:【新场景挑战】|Now here's a new scenario|Now let's try a new scenario|Now try this:|New scenario challenge:|New scenario:)\s*([\s\S]+)/i)
-          const extractedScenario = scenarioMatch ? (scenarioMatch[0].trim()) : ''
-          
-          const { error: updateErr } = await safeUpdateErrorRecord(supabase, targetErrorToReview.id, {
-            error_pattern: newPattern,
-            review_scenario: extractedScenario || undefined
-          })
-          if (updateErr) {
-            console.error('[Error Records Update Stage 1 Failed]:', updateErr)
-          }
-        } catch (dbErr) {
-          console.error('[Error Records Update Stage 1 Failed]:', dbErr)
-        }
-      }
+
       
       // 检查 AI 是否判定攻克了某个语法弱点（针对训练模式）
       if (isPracticeMode) {
