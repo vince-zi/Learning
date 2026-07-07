@@ -48,11 +48,22 @@ export async function POST(request: Request) {
 
     // --- 1. 获取会话信息与对话历史 ---
     const supabase = getServerClient()
-    const { data: sessionData, error: sessionErr } = await supabase
-      .from('learning_sessions')
-      .select('*')
-      .eq('id', sessionId)
-      .single()
+    const [sessionRes, historyRes] = await Promise.all([
+      supabase
+        .from('learning_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .single(),
+      supabase
+        .from('messages')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: true })
+        .limit(100)
+    ])
+
+    const { data: sessionData, error: sessionErr } = sessionRes
+    const { data: historyMessages } = historyRes
 
     if (sessionErr || !sessionData) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
@@ -84,110 +95,130 @@ export async function POST(request: Request) {
     if (isEnglish && !isAssessment) {
       showChooseLangHint = !explanationPreference && !continueChatting && (isReviewMode || isPracticeMode)
       const isGlobal = sessionTheme === '全局温习' || sessionTheme === '全局针对训练' || sessionTheme === 'Free Conversation'
-      
-      // 获取用户上一个已归档会话的主题或开场白，防重复
-      try {
-        const { data: lastSessions } = await supabase
-          .from('learning_sessions')
-          .select('id, theme, created_at')
-          .eq('user_id', userId)
-          .eq('module', 'english')
-          .order('created_at', { ascending: false })
-          .limit(2)
-        
-        if (lastSessions && lastSessions.length > 1) {
-          const prevSession = lastSessions[1]
-          const { data: prevMessages } = await supabase
-            .from('messages')
-            .select('content')
-            .eq('session_id', prevSession.id)
-            .eq('role', 'assistant')
-            .order('created_at', { ascending: true })
-            .limit(2)
-          if (prevMessages && prevMessages.length > 0) {
-            lastSessionTopicHint = prevMessages.map(m => m.content).join(' ')
+
+      if (isReviewMode) {
+        // 优化 1：温习模式仅按需加载特定/全局错题，绕过无关大模型上下文查询
+        const specificIdMatch = sessionTheme.match(/^温习:\s*(.+)$/)
+        if (specificIdMatch && specificIdMatch[1]) {
+          const targetId = specificIdMatch[1]
+          const { data: errRecord } = await supabase
+            .from('error_records')
+            .select('id, original_text, corrected_text, error_type, error_pattern, severity, created_at')
+            .eq('id', targetId)
+            .single()
+          
+          if (errRecord) {
+            targetErrorToReview = errRecord
+            globalNodeErrors = [errRecord]
+          }
+        } else {
+          // 全局温习: 获取所有活跃错题以进行选题
+          const { data: activeErrors } = await supabase
+            .from('error_records')
+            .select('id, original_text, corrected_text, error_type, error_pattern, severity, created_at')
+            .eq('user_id', userId)
+            .eq('noted_by_user', false)
+          
+          if (activeErrors) {
+            globalNodeErrors = activeErrors
+            targetErrorToReview = selectTargetErrorSpacedRepetition(activeErrors)
           }
         }
-      } catch (err) {
-        console.warn('Failed to query last session topic:', err)
-      }
 
-      let discoveriesQuery = supabase
-        .from('discoveries')
-        .select('title, summary, knowledge_node_id')
-        .eq('user_id', userId)
-      
-      if (!isGlobal) {
-        discoveriesQuery = discoveriesQuery.eq('knowledge_node_id', queryNodeId)
-      }
-      
-      const { data: nodeDiscoveries } = await discoveriesQuery.limit(isGlobal ? 10 : 3)
-      
-      if (nodeDiscoveries) {
-        globalNodeDiscoveries = nodeDiscoveries
-      }
-
-      const { data: nodeErrors } = await supabase
-        .from('error_records')
-        .select('id, original_text, corrected_text, error_type, error_pattern, severity, created_at')
-        .eq('user_id', userId)
-        .eq('noted_by_user', false)
-      
-      if (nodeErrors) {
-        globalNodeErrors = nodeErrors
-      }
-
-      if (lastSessionTopicHint) {
-        userContextPrompt += `\n[User's Last Chat Topic / Assistant Opening]: ${lastSessionTopicHint}\n`
-      }
-
-      if (nodeDiscoveries && nodeDiscoveries.length > 0) {
-        userContextPrompt += `\n[User's Past Discoveries]:\n` + 
-          nodeDiscoveries.map(d => `- Discovery: ${d.title}. Summary: ${d.summary}`).join('\n')
-      }
-      if (nodeErrors && nodeErrors.length > 0) {
-        userContextPrompt += `\n[User's Past Errors/Mistakes]:\n` + 
-          nodeErrors.map(e => `- User said: "${e.original_text}". Correct form: "${e.corrected_text || ''}". Error Type: ${e.error_type} (${e.error_pattern || ''})`).join('\n')
-        
-        // 挑选一个错题作为本次会话的主攻复习句 (使用基于遗忘曲线的间隔重复加权选题算法)
-        if (isReviewMode) {
-          const specificIdMatch = sessionTheme.match(/^温习:\s*(.+)$/)
-          if (specificIdMatch && specificIdMatch[1]) {
-            const targetId = specificIdMatch[1]
-            targetErrorToReview = nodeErrors.find(e => e.id === targetId)
-          }
-          if (!targetErrorToReview) {
-            targetErrorToReview = selectTargetErrorSpacedRepetition(nodeErrors)
-          }
-          const pattern = targetErrorToReview ? (targetErrorToReview.error_pattern || '') : ''
+        if (targetErrorToReview) {
+          const pattern = targetErrorToReview.error_pattern || ''
           const dbStage = pattern.endsWith(':stage-1') ? 1 : 0
           targetErrorStage = typeof reviewStage === 'number' ? reviewStage : dbStage
-          targetErrorTypeFriendly = targetErrorToReview ? getFriendlyErrorName(targetErrorToReview.error_type) : ''
+          targetErrorTypeFriendly = getFriendlyErrorName(targetErrorToReview.error_type)
+        }
+      } else {
+        // 优化 2：非温习模式（大模型对话/特训）下，通过 Promise.all 并行加载上下文
+        let discoveriesQuery = supabase
+          .from('discoveries')
+          .select('title, summary, knowledge_node_id')
+          .eq('user_id', userId)
+        
+        if (!isGlobal) {
+          discoveriesQuery = discoveriesQuery.eq('knowledge_node_id', queryNodeId)
         }
 
-        // 如果用户画像里没有总结出弱势，直接对现有的待复习错句类型做翻译兜底
-        if (userWeaknesses.length === 0) {
-          const rawTypes = Array.from(new Set(nodeErrors.map((e: any) => e.error_type))) as string[]
-          userWeaknesses = rawTypes.map(t => getFriendlyErrorName(t))
+        const [lastSessionsRes, discoveriesRes, errorsRes] = await Promise.all([
+          supabase
+            .from('learning_sessions')
+            .select('id, theme, created_at')
+            .eq('user_id', userId)
+            .eq('module', 'english')
+            .order('created_at', { ascending: false })
+            .limit(2),
+          discoveriesQuery.limit(isGlobal ? 10 : 3),
+          supabase
+            .from('error_records')
+            .select('id, original_text, corrected_text, error_type, error_pattern, severity, created_at')
+            .eq('user_id', userId)
+            .eq('noted_by_user', false)
+        ])
+
+        const lastSessions = lastSessionsRes.data
+        const nodeDiscoveries = discoveriesRes.data
+        const nodeErrors = errorsRes.data
+
+        if (nodeDiscoveries) {
+          globalNodeDiscoveries = nodeDiscoveries
+        }
+        if (nodeErrors) {
+          globalNodeErrors = nodeErrors
         }
 
-        // 为针对性训练构建弱点画像（含频率排序 + 例句）
-        if (isPracticeMode && nodeErrors && nodeErrors.length > 0) {
-          const errorsByType: Record<string, any[]> = {}
-          for (const e of nodeErrors) {
-            if (!errorsByType[e.error_type]) errorsByType[e.error_type] = []
-            errorsByType[e.error_type].push(e)
+        if (nodeDiscoveries && nodeDiscoveries.length > 0) {
+          userContextPrompt += `\n[User's Past Discoveries]:\n` + 
+            nodeDiscoveries.map(d => `- Discovery: ${d.title}. Summary: ${d.summary}`).join('\n')
+        }
+
+        if (nodeErrors && nodeErrors.length > 0) {
+          userContextPrompt += `\n[User's Past Errors/Mistakes]:\n` + 
+            nodeErrors.map(e => `- User said: "${e.original_text}". Correct form: "${e.corrected_text || ''}". Error Type: ${e.error_type} (${e.error_pattern || ''})`).join('\n')
+          
+          if (userWeaknesses.length === 0) {
+            const rawTypes = Array.from(new Set(nodeErrors.map((e: any) => e.error_type))) as string[]
+            userWeaknesses = rawTypes.map(t => getFriendlyErrorName(t))
           }
-          const sortedTypes = Object.entries(errorsByType).sort((a, b) => b[1].length - a[1].length)
-          practiceWeaknessProfile = '\n【你的英语弱点画像 — 针对性训练专属】\n'
-          weaknessProfileItems = sortedTypes.map(([type, errors]) => {
-            const fn = getFriendlyErrorName(type)
-            const ex = errors.slice(0, 1).map((e: any) => `"${e.original_text}" → "${e.corrected_text || ''}"`).join('; ')
-            practiceWeaknessProfile += `${weaknessProfileItems.length + 1}. ${fn} (${errors.length}次) — 举例: ${ex}\n`
-            return { errorType: type, friendlyName: fn, exampleSentence: ex, mastered: false }
-          })
+
+          if (isPracticeMode) {
+            const errorsByType: Record<string, any[]> = {}
+            for (const e of nodeErrors) {
+              if (!errorsByType[e.error_type]) errorsByType[e.error_type] = []
+              errorsByType[e.error_type].push(e)
+            }
+            const sortedTypes = Object.entries(errorsByType).sort((a, b) => b[1].length - a[1].length)
+            practiceWeaknessProfile = '\n【你的英语弱点画像 — 针对性训练专属】\n'
+            weaknessProfileItems = sortedTypes.map(([type, errors]) => {
+              const fn = getFriendlyErrorName(type)
+              const ex = errors.slice(0, 1).map((e: any) => `"${e.original_text}" → "${e.corrected_text || ''}"`).join('; ')
+              practiceWeaknessProfile += `${weaknessProfileItems.length + 1}. ${fn} (${errors.length}次) — 举例: ${ex}\n`
+              return { errorType: type, friendlyName: fn, exampleSentence: ex, mastered: false }
+            })
+          }
         } else if (isPracticeMode) {
           practiceWeaknessProfile = '\n【你的英语弱点画像 — 针对性训练专属】\n⚠️ 暂无历史错题记录。请从最常见的初学者语法错误开始训练，并在开场告知用户。\n'
+        }
+
+        if (lastSessions && lastSessions.length > 1) {
+          try {
+            const prevSession = lastSessions[1]
+            const { data: prevMessages } = await supabase
+              .from('messages')
+              .select('content')
+              .eq('session_id', prevSession.id)
+              .eq('role', 'assistant')
+              .order('created_at', { ascending: true })
+              .limit(2)
+            if (prevMessages && prevMessages.length > 0) {
+              lastSessionTopicHint = prevMessages.map(m => m.content).join(' ')
+              userContextPrompt += `\n[User's Last Chat Topic / Assistant Opening]: ${lastSessionTopicHint}\n`
+            }
+          } catch (err) {
+            console.warn('Failed to query last session topic:', err)
+          }
         }
       }
     }
@@ -305,13 +336,6 @@ ABSOLUTE RULES:
 
     const activeKnowledgeGraph = isEnglish ? englishKnowledgeGraph : photographyKnowledgeGraph
     const defaultNodeId = isEnglish ? 'self-intro' : 'visual-focus'
-
-    const { data: historyMessages } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('created_at', { ascending: true })
-      .limit(100)
 
     const sessionHistory: Message[] = (historyMessages || []).map((m: any) => ({
       id: m.id,

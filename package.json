@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "test:validation": "vitest --run tests/validation.test.ts",
+    "test:ui": "vitest --ui",
+    "test:check": "node check-test-env.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.2",
@@ -40,6 +45,7 @@
     "@types/three": "^0.185.0",
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^6.0.2",
+    "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "netlify-cli": "^26.1.0",
