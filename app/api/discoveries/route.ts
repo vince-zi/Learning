@@ -1,15 +1,114 @@
 // ============================================================
 // API Route: POST /api/discoveries
-// 生成"今日发现"卡片
+// 100% 本地化生成"今日发现"与"能力画像评估"，无大模型调用开销
 // ============================================================
 
 import { NextResponse } from 'next/server'
-import { getCachedProvider } from '@/interface/ai/provider-factory'
-import { SYSTEM_PROMPT } from '@/interface/prompts/system-prompt'
-import { ENGLISH_SYSTEM_PROMPT } from '@/interface/prompts/english-system-prompt'
-import { buildDiscoveryPrompt, parseDiscoveryResponse, buildManualDiscovery } from '@/interface/prompts/discovery-prompt'
 import { getServerClient } from '@/lib/db/supabase-server'
 import { v4 as uuidv4 } from 'uuid'
+
+// 错题类型与发现模板映射
+const ERROR_TYPE_MAP: Record<string, { title: string; summary: string; tags: string[]; knowledgeNodeId: string }> = {
+  'expression-chinglish': {
+    title: '突破中式英语思维',
+    summary: '你注意到在日常表达中要避免逐字翻译的“中式思维”，使用更地道自然的英文搭配。',
+    tags: ['地道表达', '思维转换', '口语流利度'],
+    knowledgeNodeId: 'opinion-expression',
+  },
+  'grammar-preposition': {
+    title: '精确把握介词使用',
+    summary: '介词常常影响表达的精确度，你在今天的练习中重点注意并修正了介词的使用场景。',
+    tags: ['介词搭配', '语法精准', '句型结构'],
+    knowledgeNodeId: 'everyday-situations',
+  },
+  'grammar-article': {
+    title: '细品冠词的奥妙',
+    summary: '定冠词与不定冠词（a/an/the）的使用决定了表达是泛指还是特指，你已开始对这些微小语法点建立警觉。',
+    tags: ['定冠词', '名词单复数', '精准语法'],
+    knowledgeNodeId: 'question-asking',
+  },
+  'grammar-tense': {
+    title: '掌握时态的时空交织',
+    summary: '时态决定了事情发生的时空维度，通过对话你更准确地把握了过去时、现在时或完成时的语境差异。',
+    tags: ['时态对比', '过去时', '时序叙述'],
+    knowledgeNodeId: 'storytelling',
+  },
+  'vocabulary-collocation': {
+    title: '探索自然词汇搭配',
+    summary: '英语中有许多固定的词汇组合，通过对比修正，你体会到了哪些词语搭配在一起最地道。',
+    tags: ['词汇搭配', '语感习惯', '地道口语'],
+    knowledgeNodeId: 'likes-dislikes',
+  },
+}
+
+const STRENGTHS_MAP: Record<string, string> = {
+  'expression-chinglish': '成功攻克中式英语表达习惯，开始运用更地道的句式结构',
+  'grammar-preposition': '掌握了常见英语介词的搭配规律，空间和抽象关系表达更精确',
+  'grammar-article': '对名词单复数及冠词的泛指/特指建立了清晰的语感边界',
+  'grammar-tense': '能够在过去时和现在时等时态语境中准确切换，叙事条理清晰',
+  'vocabulary-collocation': '积累了多组地道的英语词汇固定搭配，表达更为流畅自然',
+}
+
+const WEAKNESSES_MAP: Record<string, string> = {
+  'expression-chinglish': '有时受中文思维直译影响，需进一步打破固有字对字翻译习惯',
+  'grammar-preposition': '部分介词（in/on/at/to）的抽象用法仍有混淆，需巩固固定搭配',
+  'grammar-article': '偶尔遗漏定冠词/不定冠词，对单复数及特指的敏感度需提高',
+  'grammar-tense': '在叙述过去发生的事时，时态动词的过去式变形规则偶尔会有遗忘',
+  'vocabulary-collocation': '部分动宾搭配或词组组装还不够自然，需加强常用词块记忆',
+}
+
+function calculateCefrLevel(conqueredCount: number): "A1" | "A2" | "B1" | "B2" | "C1" | "C2" {
+  if (conqueredCount < 2) return "A1"
+  if (conqueredCount < 5) return "A2"
+  if (conqueredCount < 10) return "B1"
+  if (conqueredCount < 16) return "B2"
+  if (conqueredCount < 24) return "C1"
+  return "C2"
+}
+
+function estimateVocabularySize(cefr: string, conqueredCount: number): number {
+  const baseMap: Record<string, number> = {
+    A1: 500,
+    A2: 1200,
+    B1: 2500,
+    B2: 4500,
+    C1: 7000,
+    C2: 9500,
+  }
+  const multiplierMap: Record<string, number> = {
+    A1: 80,
+    A2: 120,
+    B1: 180,
+    B2: 250,
+    C1: 300,
+    C2: 400,
+  }
+  const base = baseMap[cefr] || 500
+  const mult = multiplierMap[cefr] || 80
+  return base + conqueredCount * mult
+}
+
+function getFallbackDiscovery(knowledgeNodeId: string) {
+  const nodeMap: Record<string, string> = {
+    'self-intro': '自我介绍与个人信息',
+    'daily-routine': '日常习惯叙述',
+    'likes-dislikes': '喜好与感受表达',
+    'everyday-situations': '日常场景对话应对',
+    'question-asking': '有效提问与信息获取',
+    'opinion-expression': '独立观点表达与阐述',
+    'comparing-discussing': '多维比较与辩证讨论',
+    'storytelling': '个人故事与时序叙述',
+    'abstract-thinking': '抽象与假设性思维',
+  }
+  const nodeName = nodeMap[knowledgeNodeId] || '日常英语口语交流'
+  return {
+    title: `攻克表达挑战：${nodeName}`,
+    summary: `在今天的场景对话练习中，你展现了极佳的沟通主动性。通过 AI 的启发式对话，你进一步锤炼了关于“${nodeName}”的英语语感与句法反应速度。`,
+    tags: [nodeName, '语感锻炼', '口语自信度'],
+    insight: '在真实对话中自然地应用词汇与句型，建立了更强的表达直觉。',
+    knowledge_node_id: knowledgeNodeId,
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -21,10 +120,9 @@ export async function POST(request: Request) {
     }
 
     const isEnglish = module === 'english'
-
     const supabase = getServerClient()
 
-    // 1. 并行读取所有必要的数据
+    // 1. 并行读取数据（包括当前会话的消息、照片，以及用户历史画像和错句记录）
     const [messagesRes, photosRes, profileRes, errorsRes] = await Promise.all([
       supabase
         .from('messages')
@@ -40,166 +138,116 @@ export async function POST(request: Request) {
         ? supabase.from('english_learner_profiles').select('*').eq('user_id', userId).maybeSingle()
         : Promise.resolve({ data: null }),
       (isEnglish && userId && userId !== 'anonymous')
-        ? supabase.from('error_records').select('original_text, corrected_text, error_type, noted_by_user').eq('user_id', userId)
+        ? supabase.from('error_records').select('session_id, original_text, corrected_text, error_type, noted_by_user').eq('user_id', userId)
         : Promise.resolve({ data: null }),
     ])
 
-    const messages = messagesRes.data
-    const photos = photosRes.data
+    const messages = messagesRes.data || []
+    const photos = photosRes.data || []
     const currentProfile = profileRes.data
-    const allErrors = errorsRes.data
-
-    const sessionMessages = (messages || []).map((m: any) => ({
-      role: m.role,
-      content: m.content,
-    }))
+    const allErrors = errorsRes.data || []
 
     const beforePhotoUrl = photos?.[0]?.image_url
     const afterPhotoUrl = photos?.[1]?.image_url
 
-    // 2. 定义并行的 AI 处理任务
-    const cardPromise = (async () => {
-      let cardData = null
-      try {
-        const provider = getCachedProvider()
-        const prompt = isEnglish
-          ? buildEnglishDiscoveryPrompt(
-              sessionMessages,
-              knowledgeNodeId || 'self-intro',
-              extractInsightFromMessages(sessionMessages)
-            )
-          : buildDiscoveryPrompt(
-              sessionMessages,
-              knowledgeNodeId || '视觉重心与构图',
-              extractInsightFromMessages(sessionMessages)
-            )
+    // 2. 本地启发式计算“今日发现卡片”
+    let cardData: any = null
+    const sessionErrors = allErrors.filter((e: any) => e.session_id === sessionId)
 
-        const response = await provider.chat({
-          systemPrompt: isEnglish ? ENGLISH_SYSTEM_PROMPT : SYSTEM_PROMPT,
-          messages: [{ role: 'user', content: prompt }],
-          maxTokens: 500,
-          temperature: 0.7,
-        })
+    if (isEnglish && sessionErrors.length > 0) {
+      // 优先选取我们有预置模板的错题类型，如果没有则用第一个
+      const matchError = sessionErrors.find((e: any) => ERROR_TYPE_MAP[e.error_type]) || sessionErrors[0]
+      const errorConfig = ERROR_TYPE_MAP[matchError.error_type]
 
-        cardData = parseDiscoveryResponse(response.content)
-      } catch (aiError) {
-        console.warn('[Discoveries API] AI card generation failed, using manual fallback:', aiError)
-      }
-
-      // 回退方案
-      if (!cardData) {
-        cardData = isEnglish
-          ? buildManualEnglishDiscovery(sessionMessages, knowledgeNodeId || '自我介绍与表达')
-          : buildManualDiscovery(sessionMessages, knowledgeNodeId || '视觉重心')
-      }
-      return cardData
-    })()
-
-    const profilePromise = (async () => {
-      if (!isEnglish || !userId || userId === 'anonymous') return null
-      try {
-        const messagesSummary = sessionMessages
-          .map((m: any) => `[${m.role === 'assistant' ? 'Partner' : 'User'}]: ${m.content}`)
-          .join('\n\n')
-
-        const unsolvedErrors = (allErrors || []).filter((e: any) => !e.noted_by_user)
-        const solvedErrors = (allErrors || []).filter((e: any) => e.noted_by_user)
-
-        const unsolvedSummary = unsolvedErrors.length > 0
-          ? unsolvedErrors.map((e: any) => `- "${e.original_text}" (考点: ${e.error_type})`).join('\n')
-          : '暂无未解决的语法错句。'
-
-        const solvedSummary = solvedErrors.length > 0
-          ? solvedErrors.map((e: any) => `- 错句 "${e.original_text}" 已完美重构为 "${e.corrected_text || ''}"`).join('\n')
-          : '暂无已彻底掌握的语法。'
-
-        const profilePrompt = `Based on the following English conversation history and the user's historical error ledger, perform a language proficiency evaluation of the User.
-
-Conversation History:
-${messagesSummary}
-
-User's Historical Errors (Unsolved, still weak areas):
-${unsolvedSummary}
-
-User's Conquered Errors (Solved, demonstrating progress & improvement):
-${solvedSummary}
-
-${currentProfile ? `Current Profile State:
-- CEFR Level: ${currentProfile.cefr_level}
-- Vocabulary Size: ${currentProfile.known_vocabulary_size}
-- Strengths: ${JSON.stringify(currentProfile.strengths)}
-- Weaknesses: ${JSON.stringify(currentProfile.weaknesses)}` : 'No current profile (this is their first assessment).'}
-
-Evaluate and output a JSON object containing the following keys (no markdown code blocks, output raw JSON):
-{
-  "cefr_level": "A1" | "A2" | "B1" | "B2" | "C1" | "C2",
-  "known_vocabulary_size": number (integer estimate of their vocabulary size),
-  "strengths": ["用中文列出 2-3 个具体的英语优势，优先结合并具体指出用户已经攻克了哪些语法盲区 (Conquered Errors)，给用户极强的提升感和成就感"],
-  "weaknesses": ["用中文列出 2-3 个具体的英语弱点或改进方向，需要精准地从 Unsolved 列表中提取错题模式并给出建议"]
-}
-
-Ensure the output is valid JSON.`
-
-        const provider = getCachedProvider()
-        const profileResponse = await provider.chat({
-          systemPrompt: 'You are an expert English language proficiency assessor. You evaluate written and spoken English dialogs and output structured assessments.',
-          messages: [{ role: 'user', content: profilePrompt }],
-          maxTokens: 400,
-          temperature: 0.5,
-        })
-
-        let evalData = null
-        try {
-          const content = profileResponse.content.trim()
-          const jsonStart = content.indexOf('{')
-          const jsonEnd = content.lastIndexOf('}')
-          if (jsonStart !== -1 && jsonEnd !== -1) {
-            evalData = JSON.parse(content.substring(jsonStart, jsonEnd + 1))
-          } else {
-            evalData = JSON.parse(content)
-          }
-        } catch (jsonErr) {
-          console.warn('[Profile Assessment] Failed to parse AI JSON:', jsonErr)
+      if (errorConfig) {
+        cardData = {
+          title: errorConfig.title,
+          summary: `${errorConfig.summary}例如，你成功将错句 “${matchError.original_text}” 改写为了地道正确的 “${matchError.corrected_text}”。`,
+          tags: errorConfig.tags,
+          insight: `我注意到在表达中应该用 “${matchError.corrected_text}” 代替 “${matchError.original_text}”，使表达更自然。`,
+          knowledge_node_id: errorConfig.knowledgeNodeId,
         }
-
-        if (evalData) {
-          const { error: profileUpsertError } = await supabase
-            .from('english_learner_profiles')
-            .upsert({
-              user_id: userId,
-              cefr_level: evalData.cefr_level || currentProfile?.cefr_level || 'A1',
-              known_vocabulary_size: evalData.known_vocabulary_size || currentProfile?.known_vocabulary_size || 500,
-              strengths: evalData.strengths || currentProfile?.strengths || [],
-              weaknesses: evalData.weaknesses || currentProfile?.weaknesses || [],
-              sessions_completed: (currentProfile?.sessions_completed || 0) + 1,
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'user_id' })
-
-          if (profileUpsertError) {
-            console.error('Failed to upsert english learner profile:', profileUpsertError.message)
-          }
+      } else {
+        cardData = {
+          title: '发现英语句法规律',
+          summary: `你通过自我纠正 and 对话引导，发现并改进了句法中的盲点。例如，你学到了应该如何将 “${matchError.original_text}” 改写为更地道的 “${matchError.corrected_text}”。`,
+          tags: ['句法盲点', '语感提升', '自我纠错'],
+          insight: `我发现并纠正了 “${matchError.original_text}” 这个表达瑕疵。`,
+          knowledge_node_id: knowledgeNodeId || 'self-intro',
         }
-      } catch (profError) {
-        console.error('[Profile Assessment Error]:', profError)
       }
-    })()
+    }
 
-    // 3. 并行等待 AI 处理完成
-    const [cardData] = await Promise.all([cardPromise, profilePromise])
+    if (!cardData) {
+      cardData = isEnglish
+        ? getFallbackDiscovery(knowledgeNodeId || 'self-intro')
+        : {
+            title: `视觉构图探索：${knowledgeNodeId || '视觉重心'}`,
+            summary: `今天在对话中你探索了关于“${knowledgeNodeId || '视觉重心'}”的内容，加深了对于画面构图和视觉美学的直觉。`,
+            tags: [knowledgeNodeId || '视觉重心', '画面平衡', '视觉审美'],
+            insight: '通过启发式互动，对摄影构图的重心与光影关系建立了更多感知。',
+            knowledge_node_id: knowledgeNodeId || 'visual-focus',
+          }
+    }
 
-    // 验证并选择知识图谱节点 ID
+    // 验证并选择最终写入数据库的节点 ID
     const validNodes = isEnglish
       ? ['self-intro', 'daily-routine', 'likes-dislikes', 'everyday-situations', 'question-asking', 'opinion-expression', 'comparing-discussing', 'storytelling', 'abstract-thinking']
       : ['visual-focus', 'visual-balance', 'frame-boundary', 'light-direction', 'exposure-triangle', 'color-temperature', 'color-contrast', 'time-visualization', 'perspective-narrative']
 
-    const nodeFromAi = (cardData as any).knowledge_node_id
-    const finalNodeId = (nodeFromAi && validNodes.includes(nodeFromAi))
-      ? nodeFromAi
+    const finalNodeId = (cardData.knowledge_node_id && validNodes.includes(cardData.knowledge_node_id))
+      ? cardData.knowledge_node_id
       : (knowledgeNodeId && validNodes.includes(knowledgeNodeId))
       ? knowledgeNodeId
       : (isEnglish ? 'self-intro' : 'visual-focus')
 
-    // 4. 并行写入发现记录并更新会话
+    // 3. 本地启发式计算“英语能力画像评估” (0ms LLM 延迟)
+    let profilePromise: PromiseLike<any> = Promise.resolve()
+    if (isEnglish && userId && userId !== 'anonymous') {
+      const unsolvedErrors = allErrors.filter((e: any) => !e.noted_by_user)
+      const solvedErrors = allErrors.filter((e: any) => e.noted_by_user)
+
+      // 计算 CEFR 级别和词汇量
+      const cefrLevel = calculateCefrLevel(solvedErrors.length)
+      const vocabularySize = estimateVocabularySize(cefrLevel, solvedErrors.length)
+
+      // 生成优势 Strengths (从已征服的错题类型中提取)
+      const strengthsSet = new Set<string>()
+      solvedErrors.forEach((e: any) => {
+        if (STRENGTHS_MAP[e.error_type]) strengthsSet.add(STRENGTHS_MAP[e.error_type])
+      })
+      const strengths = Array.from(strengthsSet).slice(0, 2)
+      if (strengths.length < 2) strengths.push('在启发式交互中勇于开口，具备良好的语感直觉')
+      if (strengths.length < 2) strengths.push('能够积极自我纠错，自主学习动力较强')
+
+      // 生成弱点 Weaknesses (从待解决的错题类型中提取)
+      const weaknessesSet = new Set<string>()
+      unsolvedErrors.forEach((e: any) => {
+        if (WEAKNESSES_MAP[e.error_type]) weaknessesSet.add(WEAKNESSES_MAP[e.error_type])
+      })
+      const weaknesses = Array.from(weaknessesSet).slice(0, 2)
+      if (weaknesses.length < 2) weaknesses.push('需要增加对话的单次输入长度，尝试使用连词构建长句')
+      if (weaknesses.length < 2) weaknesses.push('建议在温习板块中多加复习，加深地道语感钢印')
+
+      profilePromise = supabase
+        .from('english_learner_profiles')
+        .upsert({
+          user_id: userId,
+          cefr_level: cefrLevel,
+          known_vocabulary_size: vocabularySize,
+          strengths,
+          weaknesses,
+          sessions_completed: (currentProfile?.sessions_completed || 0) + 1,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' })
+        .then(({ error }) => {
+          if (error) {
+            console.error('Failed to upsert english learner profile:', error.message)
+          }
+        })
+    }
+
+    // 4. 并行写入发现记录、更新会话以及用户画像
     const discoveryId = uuidv4()
     const insertDiscoveryPromise = supabase
       .from('discoveries')
@@ -222,7 +270,11 @@ Ensure the output is valid JSON.`
       })
       .eq('id', sessionId)
 
-    const [insertRes, updateRes] = await Promise.all([insertDiscoveryPromise, updateSessionPromise])
+    const [insertRes, updateRes, _profileRes] = await Promise.all([
+      insertDiscoveryPromise,
+      updateSessionPromise,
+      profilePromise,
+    ])
 
     if (insertRes.error) {
       console.error('Failed to save discovery:', insertRes.error.message)
@@ -243,95 +295,5 @@ Ensure the output is valid JSON.`
   } catch (error: any) {
     console.error('[Discoveries API] Error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-}
-
-function extractInsightFromMessages(
-  messages: { role: string; content: string }[]
-): string | undefined {
-  // 找包含"我发现"、"我注意到"、"感觉"、"原来"的用户消息
-  const userMessages = messages.filter(m => m.role === 'user')
-  const insightPatterns = [/我发现/, /我注意到/, /原来/, /规律/, /感觉.*因为/]
-
-  for (const msg of [...userMessages].reverse()) {
-    for (const pattern of insightPatterns) {
-      if (pattern.test(msg.content)) {
-        return msg.content
-      }
-    }
-  }
-  return undefined
-}
-
-/**
- * 构建英语发现生成 Prompt
- */
-function buildEnglishDiscoveryPrompt(
-  sessionMessages: { role: string; content: string }[],
-  knowledgeNodeName: string,
-  userInsight?: string
-): string {
-  const messagesSummary = sessionMessages
-    .map(m => `[${m.role === 'assistant' ? 'Partner' : 'You'}]: ${m.content}`)
-    .join('\n\n')
-
-  return `Based on this English conversation, generate a "Today's Discovery" card.
-
-Conversation:
-${messagesSummary}
-
-User's key insight: ${userInsight || 'Extract from the conversation'}
-
-English skill area: ${knowledgeNodeName}
-
-Classify this discovery into one of the following English knowledge graph nodes (choose the best match based on the conversation):
-- self-intro: 自我介绍与个人信息
-- daily-routine: 日常习惯叙述
-- likes-dislikes: 喜好与感受表达
-- everyday-situations: 日常场景对话应对
-- question-asking: 有效提问与信息获取
-- opinion-expression: 独立观点表达与阐述
-- comparing-discussing: 多维比较与辩证讨论
-- storytelling: 个人故事与时序叙述
-- abstract-thinking: 抽象与假设性思维
-
-Generate a JSON discovery card (no markdown code block, output raw JSON):
-{
-  "title": "用中文写一个简短、启发性的发现卡片标题 (例如：'探索过去时态的语感直觉' 或 '发现日常表达中的主被动选择')",
-  "summary": "用中文写 2-3 句话，总结用户通过这次对话学到或发现的英语规律。使用 '你' (第二人称)。",
-  "tags": ["用中文写相关的英语学习标签 (例如：'过去时', '流畅度', '主动词')", "3-5个标签"],
-  "insight": "用户的核心感悟与发现 — 用中文写出",
-  "knowledge_node_id": "one of the node IDs listed above, e.g., 'daily-routine'"
-}
-
-Requirements:
-- Title, summary, tags, and insight MUST be written in Chinese (中文) so the user can easily read and understand their own progress.
-- Title should be specific, not generic like "Today's Discovery".
-- Warm, celebratory tone but not exaggerated.`
-}
-
-/**
- * 手动构建英语发现卡片（AI 不可用时的回退）
- */
-function buildManualEnglishDiscovery(
-  sessionMessages: { role: string; content: string }[],
-  knowledgeNodeName: string
-): any {
-  const userMessages = sessionMessages.filter(m => m.role === 'user')
-  const insightPatterns = /discover|notice|realize|learn|understood|interesting|I see|I get/i
-
-  let bestInsight = ''
-  for (const msg of [...userMessages].reverse()) {
-    if (insightPatterns.test(msg.content)) {
-      bestInsight = msg.content
-      break
-    }
-  }
-
-  return {
-    title: `探索英语表达：${knowledgeNodeName}`,
-    summary: `通过这轮英语对话，你在“${knowledgeNodeName}”方面获得了新的发现与理解。${bestInsight ? `你注意到：${bestInsight.slice(0, 100)}` : ''}`,
-    tags: [knowledgeNodeName, '自我发现', '口语练习'],
-    insight: bestInsight || '通过对话和练习，获得了新的直觉理解',
   }
 }

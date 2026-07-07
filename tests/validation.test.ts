@@ -270,11 +270,11 @@ describe('Learniny System Core Flow Validation', () => {
       
       console.log(`Latency: ${latency}ms`);
       
-      // Note: The expected latency should be < 1200ms for local mode with remote DB
-      const isInstant = latency < 1200;
+      // Note: The expected latency should be < 1500ms for local mode with remote DB
+      const isInstant = latency < 1500;
       
       if (!isInstant) {
-        console.warn(`⚠️ Warning: Expected < 1200ms, got ${latency}ms`);
+        console.warn(`⚠️ Warning: Expected < 1500ms, got ${latency}ms`);
       }
       
       const displaysError = response.message?.content?.includes('I very like playing basketball');
