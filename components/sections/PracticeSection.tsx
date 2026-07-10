@@ -86,7 +86,7 @@ function SyntaxHint({ errorType, hintText }: { errorType: string; hintText?: str
       <div className="flex items-center gap-3">
         <div
           className="flex items-center gap-1.5 px-2.5 py-1 rounded-md w-fit text-[10px] font-mono tracking-wider"
-          style={{ background: '#6FA8B522', border: '1px solid #6FA8B544', color: '#6FA8B5' }}
+          style={{ background: '#00B2FF15', border: '1px solid #00B2FF38', color: '#00B2FF' }}
         >
           <Info size={12} strokeWidth={2.5} />
           <span>小提示 · {hint?.short || '语法'}</span>
@@ -94,7 +94,7 @@ function SyntaxHint({ errorType, hintText }: { errorType: string; hintText?: str
         <button
           onClick={handleUnderstand}
           className="flex items-center gap-1 text-[10px] font-mono tracking-wider transition-colors cursor-pointer"
-          style={{ color: '#6FA8B5', background: 'transparent', border: 'none' }}
+          style={{ color: '#00B2FF', background: 'transparent', border: 'none' }}
         >
           <CheckCircle2 size={12} strokeWidth={2} />
           懂了
@@ -123,11 +123,13 @@ interface ExtendedMessage {
 function MessageBubble({ 
   msg, 
   expandedDiffId, 
-  onToggleDiff 
+  onToggleDiff,
+  isFirstUserMsg
 }: { 
   msg: ExtendedMessage; 
   expandedDiffId: string | null; 
   onToggleDiff: () => void;
+  isFirstUserMsg: boolean;
 }) {
   const isUser = msg.role === 'user';
   const hasEnglish = /[a-zA-Z]{3,}/.test(msg.content);
@@ -164,11 +166,10 @@ function MessageBubble({
       className={`flex flex-col w-full mb-6 ${isUser ? 'items-end' : 'items-start'}`}
     >
       <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[75%]`}>
-        {/* Syntax hint above AI bubble — hidden for now, kept for future use */}
-        {/*!TODO: re-enable when hint UX is ready */}
-        {/* {!isUser && msg._errorType && (
+        {/* Syntax hint above AI bubble */}
+        {!isUser && msg._errorType && (
           <SyntaxHint errorType={msg._errorType} hintText={msg._hintText} />
-        )} */}
+        )}
 
         <div
           className={`relative px-5 py-3.5 text-[15px] leading-relaxed break-words shadow-sm
@@ -217,6 +218,18 @@ function MessageBubble({
         </div>
 
         <AnimatePresence>
+          {hasError && !showAnalysis && isFirstUserMsg && (
+            <motion.div
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mt-2 flex items-center gap-1.5 text-[11.5px] text-[#C9A15D] font-medium"
+            >
+              <Lightbulb className="w-3.5 h-3.5 text-[#C9A15D] animate-pulse" />
+              <span>💡 尝试点击右下角“小黄点”查看地道改写建议</span>
+            </motion.div>
+          )}
+
           {showAnalysis && hasError && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
@@ -260,7 +273,7 @@ function MessageBubble({
 }
 
 export function PracticeSection() {
-  const { messages, addMessage, isThinking, setThinking, session, setSession } = useSessionStore();
+  const { messages, addMessage, isThinking, setThinking, session, setSession, summaryData, setSummaryData } = useSessionStore();
   
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [lastSessionId, setLastSessionId] = useState<string | null>(null);
@@ -272,9 +285,6 @@ export function PracticeSection() {
   const [msgExtras, setMsgExtras] = useState<Record<string, { _errorType?: string; _correctedText?: string; _hintText?: string }>>({});
   const containerRef = useRef<HTMLDivElement>(null);
   const [isEndingSession, setIsEndingSession] = useState(false);
-  const [summaryData, setSummaryData] = useState<any | null>(null);
-
-  // Retrieve last session ID from local storage on mount
   useEffect(() => {
     const saved = localStorage.getItem('learniny_last_session_id');
     if (saved) {
@@ -583,14 +593,21 @@ export function PracticeSection() {
 
       clearTimeout(safetyTimeout);
 
+      // 无论成功还是失败，都立即清理本地对话会话状态，并切回首页
+      localStorage.removeItem('learniny_last_session_id');
+      setLastSessionId(null);
+      setActiveSessionId(null);
+      setSession(null);
+      useSessionStore.getState().setActiveSection('home');
+
       if (discoveryData && discoveryData.success) {
         setSummaryData(discoveryData.discovery);
-      } else {
-        localStorage.removeItem('learniny_last_session_id');
-        setLastSessionId(null);
-        setActiveSessionId(null);
-        setSession(null);
-        useSessionStore.getState().setActiveSection('home');
+      } else if (discoveryData && discoveryData.tooShort) {
+        setSummaryData({
+          title: '本轮对话过短',
+          summary: '你刚才的对话较短，系统无法评估出实质性的语法点。建议下次与 AI 多进行几轮英语交流，帮助我们更好地为你总结并点亮星图哦～',
+          isNotice: true
+        });
       }
     } catch (err) {
       console.error('Error during ending session:', err);
@@ -639,9 +656,9 @@ export function PracticeSection() {
               <button
                 onClick={handleEndSession}
                 disabled={isEndingSession}
-                className="text-[9px] text-brand-error/70 hover:text-brand-error tracking-wider uppercase font-mono transition-colors cursor-pointer disabled:opacity-50"
+                className="px-3.5 py-1.5 bg-brand-error/5 hover:bg-brand-error/15 border border-brand-error/25 hover:border-brand-error/50 rounded-full text-[10px] font-bold text-brand-error tracking-wider uppercase transition-all duration-300 disabled:opacity-50 cursor-pointer shadow-[0_0_12px_rgba(255,75,75,0.05)] animate-pulse"
               >
-                {isEndingSession ? '正在结算星图...' : '结束对话'}
+                {isEndingSession ? '结算中...' : '结束对话'}
               </button>
             </div>
 
@@ -654,14 +671,19 @@ export function PracticeSection() {
                 </div>
               )}
 
-              {extendedMessages.map((msg) => (
-                <MessageBubble
-                  key={msg.id}
-                  msg={msg}
-                  expandedDiffId={expandedDiffId}
-                  onToggleDiff={() => setExpandedDiffId(expandedDiffId === msg.id ? null : msg.id)}
-                />
-              ))}
+              {extendedMessages.map((msg) => {
+                const userMsgs = extendedMessages.filter(m => m.role === 'user')
+                const isFirstUserMsg = userMsgs.length > 0 && userMsgs[0].id === msg.id
+                return (
+                  <MessageBubble
+                    key={msg.id}
+                    msg={msg}
+                    expandedDiffId={expandedDiffId}
+                    onToggleDiff={() => setExpandedDiffId(expandedDiffId === msg.id ? null : msg.id)}
+                    isFirstUserMsg={isFirstUserMsg}
+                  />
+                )
+              })}
 
               {isThinking && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
@@ -708,86 +730,7 @@ export function PracticeSection() {
 
       </div>
 
-      <AnimatePresence>
-        {summaryData && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xl p-4 md:p-8 pointer-events-auto">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="w-full max-w-lg bg-[#0D0D0D] border border-brand-accent/20 rounded-3xl p-6 md:p-8 flex flex-col gap-6 shadow-[0_0_50px_rgba(0,255,157,0.15)] relative overflow-hidden"
-            >
-              {/* Ambient glowing background orb */}
-              <div className="absolute -top-24 -left-24 w-48 h-48 rounded-full bg-brand-accent/10 blur-[80px] pointer-events-none" />
-              <div className="absolute -bottom-24 -right-24 w-48 h-48 rounded-full bg-brand-accent/5 blur-[80px] pointer-events-none" />
 
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2 text-brand-accent text-xs font-mono tracking-widest uppercase">
-                  <Sparkles className="w-4 h-4 animate-pulse text-brand-accent" />
-                  <span>今日学习发现报告</span>
-                </div>
-                <h3 className="text-xl font-display text-text-primary tracking-wide leading-snug">
-                  {summaryData.title || '探索新语法与语感表达'}
-                </h3>
-              </div>
-
-              <div className="h-px bg-divider" />
-
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] text-text-secondary uppercase font-mono tracking-wider">发现点核心解析</span>
-                  <p className="text-sm text-text-secondary leading-relaxed bg-[#121212] border border-divider rounded-2xl p-4">
-                    {summaryData.summary || '你在今天的对话中成功应用了多项表达，并在对话引导中发现并修正了细微句法盲点。'}
-                  </p>
-                </div>
-
-                {summaryData.insight && (
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-[10px] text-text-secondary uppercase font-mono tracking-wider">你的学习感悟</span>
-                    <p className="text-xs text-brand-accent/80 italic leading-relaxed bg-brand-accent/5 border border-brand-accent/25 rounded-2xl p-4">
-                      “ {summaryData.insight} ”
-                    </p>
-                  </div>
-                )}
-
-                {summaryData.tags && summaryData.tags.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    <span className="text-[10px] text-text-secondary uppercase font-mono tracking-wider">星图技能标签</span>
-                    <div className="flex flex-wrap gap-2">
-                      {summaryData.tags.map((tag: string, idx: number) => (
-                        <span 
-                          key={idx}
-                          className="px-3 py-1 bg-brand-accent/10 border border-brand-accent/20 rounded-full text-[10px] text-brand-accent tracking-wider font-medium"
-                        >
-                          # {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="h-px bg-divider" />
-
-              <div className="flex flex-col sm:flex-row gap-4">
-                <button
-                  onClick={() => {
-                    setSummaryData(null);
-                    localStorage.removeItem('learniny_last_session_id');
-                    setLastSessionId(null);
-                    setActiveSessionId(null);
-                    setSession(null);
-                    useSessionStore.getState().setActiveSection('home');
-                  }}
-                  className="flex-1 px-6 py-3 bg-brand-accent text-[#000000] text-xs font-bold tracking-widest uppercase rounded-full hover:scale-105 transition-transform shadow-[0_0_20px_rgba(0,255,157,0.1)] cursor-pointer"
-                >
-                  确认并返回主页
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

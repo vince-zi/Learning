@@ -38,10 +38,66 @@ function getClueForErrorType(type: string, original: string): string {
   return genericHints[type] || `"${original.slice(0, 20)}..." 这里可以改得更自然一些。`;
 }
 
+function renderFormattedText(text: string): React.ReactNode {
+  if (!text) return null;
+
+  // Split by newlines to keep lines intact
+  const lines = text.split('\n');
+
+  return (
+    <div style={{ wordBreak: 'break-word', lineHeight: '1.6' }}>
+      {lines.map((line, lineIdx) => {
+        const parts: React.ReactNode[] = [];
+        const tokenRegex = /(<u>\*\*(.*?)\*\*<\/u>|<u>(.*?)<\/u>|\*\*(.*?)\*\*)/gi;
+        let lastIndex = 0;
+        let match;
+
+        while ((match = tokenRegex.exec(line)) !== null) {
+          const index = match.index;
+          if (index > lastIndex) {
+            parts.push(line.slice(lastIndex, index));
+          }
+
+          if (match[0].startsWith('<u>**') || match[0].startsWith('<U>**')) {
+            parts.push(
+              <u key={index} style={{ textDecoration: 'underline', textUnderlineOffset: '3px', fontWeight: 'bold', color: tokens.teal }}>
+                {match[2]}
+              </u>
+            );
+          } else if (match[0].startsWith('<u>') || match[0].startsWith('<U>')) {
+            parts.push(
+              <u key={index} style={{ textDecoration: 'underline', textUnderlineOffset: '3px' }}>
+                {match[3]}
+              </u>
+            );
+          } else if (match[0].startsWith('**')) {
+            parts.push(
+              <strong key={index} style={{ fontWeight: 'bold', color: tokens.textPrimary }}>
+                {match[4]}
+              </strong>
+            );
+          }
+
+          lastIndex = tokenRegex.lastIndex;
+        }
+
+        if (lastIndex < line.length) {
+          parts.push(line.slice(lastIndex));
+        }
+
+        return (
+          <div key={lineIdx} style={{ minHeight: '1.2em', marginBottom: lineIdx === lines.length - 1 ? 0 : 4 }}>
+            {parts}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function renderAiTaskWithColors(text: string): React.ReactNode {
   if (!text) return null;
   
-  // 使用正则表达式对新场景进行模糊匹配并截取
   const regex = /(【新场景挑战】|Now here's a new scenario[^\n:]*|Now let's try a new scenario[^\n:]*|Now try this:|New scenario challenge:|New scenario:)/i;
   
   const match = text.match(regex);
@@ -54,8 +110,8 @@ function renderAiTaskWithColors(text: string): React.ReactNode {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {prefix && (
-          <div style={{ color: tokens.textSecondary, fontSize: 13, lineHeight: 1.6 }}>
-            {prefix}
+          <div style={{ color: tokens.textSecondary, fontSize: 13 }}>
+            {renderFormattedText(prefix)}
           </div>
         )}
         <div style={{
@@ -69,13 +125,15 @@ function renderAiTaskWithColors(text: string): React.ReactNode {
           lineHeight: 1.6,
           fontSize: 14,
         }}>
-          📌 【新场景挑战】{suffix}
+          📌 【新场景挑战】
+          <div style={{ marginTop: 6, fontWeight: 'normal', color: tokens.textPrimary }}>
+            {renderFormattedText(suffix)}
+          </div>
         </div>
       </div>
     );
   }
   
-  // 兜底：如果完全没有匹配到上述任何新场景提示词，直接以 teal 风格渲染整个框（符合第二关风格）
   return (
     <div style={{
       background: tokens.tealSoft,
@@ -88,7 +146,7 @@ function renderAiTaskWithColors(text: string): React.ReactNode {
       lineHeight: 1.6,
       fontSize: 14,
     }}>
-      {text}
+      {renderFormattedText(text)}
     </div>
   );
 }
@@ -427,7 +485,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
                 lineHeight: 1.5,
               }}>
                 <span style={{ fontWeight: 'bold', color: tokens.coral }}>❌ 答错啦，请根据提示修改：</span>
-                <div style={{ marginTop: 4, color: tokens.textSecondary }}>{aiFeedback}</div>
+                <div style={{ marginTop: 8 }}>{renderFormattedText(aiFeedback)}</div>
               </div>
             )}
 

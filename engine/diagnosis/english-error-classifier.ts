@@ -46,7 +46,7 @@ const ENGLISH_ERROR_PATTERNS: ErrorPattern[] = [
     patterns: [
       /\b(a)\s+[aeiou]/i,              // a + 元音开头
       /\b(an)\s+[^aeiou]/i,             // an + 非元音开头
-      /I\s+am\s+([a-z]+)\s+(?!a|an|the)/i,  // 缺少冠词的职业/身份
+      /\bI\s+am\s+(student|teacher|doctor|nurse|engineer|programmer|developer|designer|manager|lawyer|writer|driver|cook|chef|player|singer|actor|artist|scientist|pilot|clerk|officer)\b/i,  // 缺少冠词的职业/身份
       /\b(the)\s+([a-z]+)\s+(the)\b/i,  // 重复the
     ],
     cefrTarget: 'B2',

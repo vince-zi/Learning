@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server'
 import { getServerClient } from '@/lib/db/supabase-server'
 import { v4 as uuidv4 } from 'uuid'
+import { getCachedProvider } from '@/interface/ai/provider-factory'
 
 // 错题类型与发现模板映射
 const ERROR_TYPE_MAP: Record<string, { title: string; summary: string; tags: string[]; knowledgeNodeId: string }> = {
@@ -150,44 +151,78 @@ export async function POST(request: Request) {
     const beforePhotoUrl = photos?.[0]?.image_url
     const afterPhotoUrl = photos?.[1]?.image_url
 
-    // 2. 本地启发式计算“今日发现卡片”
+    // 2. 计算“今日发现卡片”
     let cardData: any = null
-    const sessionErrors = allErrors.filter((e: any) => e.session_id === sessionId)
 
-    if (isEnglish && sessionErrors.length > 0) {
-      // 优先选取我们有预置模板的错题类型，如果没有则用第一个
-      const matchError = sessionErrors.find((e: any) => ERROR_TYPE_MAP[e.error_type]) || sessionErrors[0]
-      const errorConfig = ERROR_TYPE_MAP[matchError.error_type]
+    if (isEnglish) {
+      // 检查对话长度与发言有效性（忽略初始化信号）
+      const userMessages = messages.filter((m: any) => m.role === 'user' && m.content !== '[INIT_FREE_CONVERSATION]')
+      const totalUserCharCount = userMessages.reduce((sum: number, m: any) => sum + (m.content || '').length, 0)
+      const realUserMessages = userMessages.filter((m: any) => {
+        const cleanMsg = (m.content || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '')
+        return !['hi', 'hello', 'hey', 'ok', 'yes', 'no'].includes(cleanMsg)
+      })
 
-      if (errorConfig) {
-        cardData = {
-          title: errorConfig.title,
-          summary: `${errorConfig.summary}例如，你成功将错句 “${matchError.original_text}” 改写为了地道正确的 “${matchError.corrected_text}”。`,
-          tags: errorConfig.tags,
-          insight: `我注意到在表达中应该用 “${matchError.corrected_text}” 代替 “${matchError.original_text}”，使表达更自然。`,
-          knowledge_node_id: errorConfig.knowledgeNodeId,
-        }
-      } else {
-        cardData = {
-          title: '发现英语句法规律',
-          summary: `你通过自我纠正 and 对话引导，发现并改进了句法中的盲点。例如，你学到了应该如何将 “${matchError.original_text}” 改写为更地道的 “${matchError.corrected_text}”。`,
-          tags: ['句法盲点', '语感提升', '自我纠错'],
-          insight: `我发现并纠正了 “${matchError.original_text}” 这个表达瑕疵。`,
-          knowledge_node_id: knowledgeNodeId || 'self-intro',
-        }
+      if (realUserMessages.length < 1 || totalUserCharCount < 8) {
+        return NextResponse.json({
+          success: false,
+          tooShort: true,
+          error: '对话过短，未产生知识点积累'
+        })
       }
-    }
 
-    if (!cardData) {
-      cardData = isEnglish
-        ? getFallbackDiscovery(knowledgeNodeId || 'self-intro')
-        : {
-            title: `视觉构图探索：${knowledgeNodeId || '视觉重心'}`,
-            summary: `今天在对话中你探索了关于“${knowledgeNodeId || '视觉重心'}”的内容，加深了对于画面构图和视觉美学的直觉。`,
-            tags: [knowledgeNodeId || '视觉重心', '画面平衡', '视觉审美'],
-            insight: '通过启发式互动，对摄影构图的重心与光影关系建立了更多感知。',
-            knowledge_node_id: knowledgeNodeId || 'visual-focus',
-          }
+      // 调用 LLM 提炼今日学习发现
+      const formattedHistory = messages
+        .filter((m: any) => m.content !== '[INIT_FREE_CONVERSATION]')
+        .map((m: any) => `${m.role === 'user' ? 'User' : 'AI'}: ${m.content}`)
+        .join('\n')
+
+      try {
+        const provider = getCachedProvider()
+        const response = await provider.chat({
+          systemPrompt: "你是一个专业的英语教学评估助手。你需要分析学生的对话历史，提炼出他们最核心的一项今日语法/句法/表达发现。请务必以精简、准确的 JSON 格式输出，不要包含任何 markdown 代码块格式标记（如 ```json 等），也不需要多余的修饰词，直接输出 JSON 串本身。",
+          messages: [
+            {
+              role: 'user',
+              content: `请分析以下这段学生与 AI 英语教练的对话，提炼今日最关键的学习发现。
+对话历史：
+"""
+${formattedHistory}
+"""
+
+输出要求：
+输出一个包含以下字段的纯 JSON 对象，不要包含 markdown 标记：
+{
+  "title": "今日发现的一个简短吸引人的标题，中文（例如：'克服直译思维'、'时态的过去时表达'）",
+  "summary": "对本项发现的中文核心解析（2-3句）。请结合对话历史中学生实际说过的句子，指出哪里说得不妥，以及经过 AI 提示后他们是如何用正确的句子重新表达的。示例：'你发现表示...时不要直译为...，而是可以用更地道的“...”来表达。'",
+  "insight": "从学生第一人称视角的简短感悟（1句），总结本轮所得（示例：'我发现当表达...时，使用...会比...自然得多。'）",
+  "tags": ["标签1", "标签2"] （2-3个中文技能标签，例如：["地道表达", "时态对比"]）
+}`
+            }
+          ],
+          maxTokens: 500,
+          temperature: 0.3
+        })
+
+        let jsonText = response.content.trim()
+        if (jsonText.startsWith('```')) {
+          jsonText = jsonText.replace(/^```(json)?/, '').replace(/```$/, '').trim()
+        }
+        cardData = JSON.parse(jsonText)
+      } catch (err) {
+        console.error('Failed to generate discovery via LLM:', err)
+        // 容错度低：如果生成失败，使用本地备用启发式数据
+        cardData = getFallbackDiscovery(knowledgeNodeId || 'self-intro')
+      }
+    } else {
+      // 摄影模式保持原状
+      cardData = {
+        title: `视觉构图探索：${knowledgeNodeId || '视觉重心'}`,
+        summary: `今天在对话中你探索了关于“${knowledgeNodeId || '视觉重心'}”的内容，加深了对于画面构图和视觉美学的直觉。`,
+        tags: [knowledgeNodeId || '视觉重心', '画面平衡', '视觉审美'],
+        insight: '通过启发式互动，对摄影构图的重心与光影关系建立了更多感知。',
+        knowledge_node_id: knowledgeNodeId || 'visual-focus',
+      }
     }
 
     // 验证并选择最终写入数据库的节点 ID

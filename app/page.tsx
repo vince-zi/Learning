@@ -7,11 +7,13 @@ import { PracticeSection } from '@/components/sections/PracticeSection';
 import { DiscoverySection } from '@/components/sections/DiscoverySection';
 import { ReviewSection } from '@/components/sections/ReviewSection';
 import { ProfileSection } from '@/components/sections/ProfileSection';
+import { AnimatePresence } from 'framer-motion';
+import { SummaryModal } from '@/components/ui/SummaryModal';
 
 const SECTIONS = ['home', 'practice', 'discovery', 'review', 'profile'] as const;
 
 export default function SPAHome() {
-  const { activeSection, setActiveSection } = useSessionStore();
+  const { activeSection, setActiveSection, summaryData, setSummaryData } = useSessionStore();
 
   const sections = [
     { name: 'home' as const, id: 'section-home', comp: <HomeSection onStartChat={() => setActiveSection('practice')} /> },
@@ -39,7 +41,7 @@ export default function SPAHome() {
   }, [activeSection]);
 
   return (
-    <div className="w-full h-full overflow-hidden bg-transparent">
+    <div className="w-full h-full overflow-hidden bg-transparent relative">
       {/* Hardware-accelerated sliding deck container */}
       <div 
         className="w-full h-full flex flex-col transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]"
@@ -55,6 +57,12 @@ export default function SPAHome() {
           </section>
         ))}
       </div>
+
+      <AnimatePresence>
+        {summaryData && (
+          <SummaryModal summaryData={summaryData} onClose={() => setSummaryData(null)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

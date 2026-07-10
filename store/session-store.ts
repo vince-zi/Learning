@@ -58,6 +58,10 @@ export interface SessionStore {
   selectedNodeId: string | null
   setSelectedNodeId: (nodeId: string | null) => void
 
+  // --- 发现总结弹窗 ---
+  summaryData: any | null
+  setSummaryData: (summaryData: any | null) => void
+
   // --- 重置 ---
   resetSession: () => void
 }
@@ -73,6 +77,9 @@ export const useSessionStore = create<SessionStore>((set) => ({
   setIs3DMode: (is3DMode) => set({ is3DMode }),
   selectedNodeId: null,
   setSelectedNodeId: (selectedNodeId) => set({ selectedNodeId }),
+
+  summaryData: null,
+  setSummaryData: (summaryData) => set({ summaryData }),
 
   session: null,
   setSession: (session) => set({ session }),
@@ -122,6 +129,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       error: null,
       phase: 'welcome',
       currentPhotoIndex: 0,
+      summaryData: null,
       // Keep module selection across sessions
       module: state.module,
     })),
