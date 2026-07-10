@@ -154,7 +154,8 @@ start (400ms delay)
 | 2026-07-10 | Antigravity | [自由对话开场话题多样化去偏算法优化] 1. 在 `app/api/chat/route.ts` 中拦截 `[INIT_FREE_CONVERSATION]` 初始指令；2. 强制指定多样化的日常生活主题清单（兴趣爱好、影音娱乐、旅行计划、户外运动、宠物饲养、天气季节等），并添加显式强约束，禁止 AI 在首轮提及任何有关吃饭、咖啡、糖等话题；3. 解决大模型因上下文错题记忆产生严重偏好而反复使用同一话题开场的交互缺陷。测试全部通过。 | 本地修改且测试通过 |
 | 2026-07-10 | Antigravity | [前端小蓝点语法提示块渲染重新实装] 1. 在 `components/sections/PracticeSection.tsx` 中重新解注并启用了 `SyntaxHint` 组件；2. 当 AI 检测到用户上一轮消息存在语法偏差时，会在 AI 气泡上方同步渲染一个轻量清爽的小蓝点语法提示块，利用 `[HINT: ...]` 的大白话教学思路（中英对照）为用户详细解惑（如为什么这里用 have 而非 had 等时态和助动词病因分析），点击“懂了”可随 localStorage 自动保存并收起。测试运行完全正常。 | 本地修改且测试通过 |
 | 2026-07-10 | Antigravity | [小蓝点颜色升级亮蓝与小黄点引导频次控制] 1. 在 `components/sections/PracticeSection.tsx` 中将 `SyntaxHint` 小蓝点提示的背景、边框和字体色值全部升级为极具质感的亮蓝色（`#00B2FF`）；2. 增加了 `isFirstUserMsg` 条件限制，使“💡 尝试点击右下角‘小黄点’查看地道改写建议”这句辅助引导语仅在用户发送会话第一条消息有语病时展现一次，后续有语病时保持安静，只在气泡右下角静默保留交互式小黄点，保证聊天清爽。测试全部通过。 | 本地修改且测试通过 |
-
+| 2026-07-10 | Antigravity | [移动端粒子修复+排版优化+用户建议提交] 1. 修复 ClientLayout.tsx 中 isMobile 检测完全跳过 WebGL Canvas 导致手机端无粒子特效的根因，改为降级渲染（3000粒子+禁用DepthOfField/ChromaticAberration+降低Bloom）；2. 修正 ProfileSection 移动端排版：垂直顶部对齐、响应式标题字号、三统计卡片均分避免col-span-2不对称；3. 在ProfileSection画像报告下方新增折叠式用户建议提交面板（MessageSquare入口→textarea→/api/feedback→Supabase user_feedback表）；4. 创建/api/feedback后端接口和004_user_feedback.sql迁移文件；5. 顺手修复GsapDashboardDemo.tsx的class→className历史遗留。 | npm run build 17/17 routes 构建成功 |
+| 2026-07-10 | Antigravity | [桌面端粒子性能优化+轻松模式开关] 1. 优化 Experience.jsx，将桌面端粒子数从 10000 降至 5000，移除 DepthOfField，multisampling 4降至2，提升渲染丝滑度；2. 在 session-store.ts 增加 isLiteMode 状态并持久化至 localStorage；3. 在 ClientLayout 增加右下角浮动“轻松模式”开关，开启后直接卸载 WebGL Canvas（SafeBackground 降级渲染为轻量 CSS 动画光晕），兼顾低配设备性能。 | 17/17 routes 静态构建成功，功能测试通过 |
 
 
 

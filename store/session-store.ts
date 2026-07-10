@@ -62,6 +62,10 @@ export interface SessionStore {
   summaryData: any | null
   setSummaryData: (summaryData: any | null) => void
 
+  // --- 轻松模式（关闭粒子特效） ---
+  isLiteMode: boolean
+  setLiteMode: (lite: boolean) => void
+
   // --- 重置 ---
   resetSession: () => void
 }
@@ -80,6 +84,14 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   summaryData: null,
   setSummaryData: (summaryData) => set({ summaryData }),
+
+  isLiteMode: typeof window !== 'undefined' && localStorage.getItem('learniny_lite_mode') === '1',
+  setLiteMode: (lite) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('learniny_lite_mode', lite ? '1' : '0');
+    }
+    set({ isLiteMode: lite });
+  },
 
   session: null,
   setSession: (session) => set({ session }),

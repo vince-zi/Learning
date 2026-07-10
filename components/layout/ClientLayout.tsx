@@ -6,7 +6,7 @@ import { Experience } from '@/components/Experience';
 import { LeftNav } from './LeftNav';
 import { useSessionStore } from '@/store/session-store';
 
-function BackgroundCanvas({ eventSource }: { eventSource: any }) {
+function BackgroundCanvas({ eventSource, isMobile }: { eventSource: any; isMobile: boolean }) {
   const { activeSection, is3DMode } = useSessionStore();
 
   const sectionPathMap: Record<string, string> = {
@@ -20,7 +20,7 @@ function BackgroundCanvas({ eventSource }: { eventSource: any }) {
 
   return (
     <Canvas
-      dpr={[1, 1.5]}
+      dpr={isMobile ? [1, 1] : [1, 1.5]}
       eventSource={eventSource}
       eventPrefix="client"
       camera={{ position: [0, 0, 6], fov: 45 }}
@@ -28,36 +28,64 @@ function BackgroundCanvas({ eventSource }: { eventSource: any }) {
       style={{ pointerEvents: is3DMode ? 'auto' : 'none', zIndex: 0 }}
     >
       <Suspense fallback={null}>
-        <Experience pathname={mappedPath} />
+        <Experience pathname={mappedPath} isMobile={isMobile} />
       </Suspense>
     </Canvas>
+  );
+}
+
+function AmbientFallback() {
+  return (
+    <div className="absolute inset-0 z-0 pointer-events-none">
+      <div className="absolute top-[-20%] left-[-10%] w-[70%] h-[70%] bg-brand-accent/8 rounded-full blur-[120px] mix-blend-screen animate-ambient-flow" style={{ animationDuration: '20s' }} />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-brand-hint/8 rounded-full blur-[100px] mix-blend-screen animate-ambient-flow" style={{ animationDuration: '25s', animationDelay: '-5s' }} />
+    </div>
   );
 }
 
 function SafeBackground({ eventSource }: { eventSource: any }) {
   const [hasError, setHasError] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const { isLiteMode } = useSessionStore();
 
   useEffect(() => {
-    // Skip WebGL on mobile — GPU compositor stacks WebGL above HTML content
     setIsMobile(/Mobi|Android/i.test(navigator.userAgent));
   }, []);
 
-  if (hasError || isMobile) {
-    return (
-      <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-[-20%] left-[-10%] w-[70%] h-[70%] bg-brand-accent/8 rounded-full blur-[120px] mix-blend-screen animate-ambient-flow" style={{ animationDuration: '20s' }} />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-brand-hint/8 rounded-full blur-[100px] mix-blend-screen animate-ambient-flow" style={{ animationDuration: '25s', animationDelay: '-5s' }} />
-      </div>
-    );
+  if (hasError || isLiteMode) {
+    return <AmbientFallback />;
   }
 
   try {
-    return <BackgroundCanvas eventSource={eventSource} />;
+    return <BackgroundCanvas eventSource={eventSource} isMobile={isMobile} />;
   } catch {
     setHasError(true);
     return null;
   }
+}
+
+function LiteModeToggle() {
+  const { isLiteMode, setLiteMode } = useSessionStore();
+
+  return (
+    <button
+      onClick={() => setLiteMode(!isLiteMode)}
+      title={isLiteMode ? '恢复粒子特效' : '关闭粒子特效，节省资源'}
+      className={`fixed bottom-5 right-5 z-50 flex items-center gap-2 px-3.5 py-2 rounded-full text-[11px] font-mono tracking-wider transition-all duration-500 backdrop-blur-md border pointer-events-auto group ${
+        isLiteMode
+          ? 'bg-brand-accent/10 border-brand-accent/30 text-brand-accent shadow-[0_0_12px_rgba(0,255,157,0.15)]'
+          : 'bg-[#0A0A0A]/80 border-[#1A1A1A] text-[#666666] hover:text-[#999999] hover:border-[#333333]'
+      }`}
+    >
+      {/* Leaf / Sparkle icon */}
+      <span className={`transition-transform duration-300 ${isLiteMode ? 'scale-110' : 'group-hover:scale-110'}`}>
+        {isLiteMode ? '✨' : '🍃'}
+      </span>
+      <span className="hidden sm:inline">
+        {isLiteMode ? '恢复特效' : '轻松模式'}
+      </span>
+    </button>
+  );
 }
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
@@ -79,9 +107,12 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
 
       <SafeBackground eventSource={mainRef} />
 
+      <LiteModeToggle />
+
       <div className="absolute inset-0 z-10 overflow-hidden" style={{ transform: 'translate3d(0, 0, 0)' }}>
         {children}
       </div>
     </div>
   );
 }
+

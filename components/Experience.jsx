@@ -146,9 +146,9 @@ void main() {
 }
 `;
 
-const PracticeParticles = ({ active, pathname = '/' }) => {
+const PracticeParticles = ({ active, pathname = '/', isMobile = false }) => {
     const materialRef = useRef();
-    const particleCount = 10000;
+    const particleCount = isMobile ? 3000 : 5000;
     
     const { isThinking, error } = useSessionStore();
     const hasError = !!error;
@@ -204,6 +204,7 @@ const PracticeParticles = ({ active, pathname = '/' }) => {
     }, []);
 
     const { positions, targets, colors, sizes, charIndices } = useMemo(() => {
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         const pos = new Float32Array(particleCount * 3);
         const tgt = new Float32Array(particleCount * 3);
         const col = new Float32Array(particleCount * 3);
@@ -547,7 +548,7 @@ const PlanetarySystem = ({ active }) => {
 // ---------------------------------------------------------
 // Main Scene Controller
 // ---------------------------------------------------------
-export const Experience = ({ pathname }) => {
+export const Experience = ({ pathname, isMobile = false }) => {
     const cameraGroup = useRef();
     const { is3DMode } = useSessionStore();
     
@@ -593,7 +594,7 @@ export const Experience = ({ pathname }) => {
 
     return (
         <group ref={cameraGroup}>
-            <PracticeParticles active={isPractice} pathname={pathname} />
+            <PracticeParticles active={isPractice} pathname={pathname} isMobile={isMobile} />
             <Constellation active={isDiscovery && is3DMode} />
 
             {is3DMode && pathname === '/discovery' && (
@@ -605,20 +606,21 @@ export const Experience = ({ pathname }) => {
                 />
             )}
             
-            {/* Post-Processing Pipeline */}
-            <EffectComposer disableNormalPass multisampling={4}>
-                <DepthOfField focusDistance={0.05} focalLength={0.1} bokehScale={2} height={480} />
+            {/* Post-Processing Pipeline — optimized for smoothness */}
+            <EffectComposer disableNormalPass multisampling={isMobile ? 0 : 2}>
                 <Bloom 
                     luminanceThreshold={0.2} 
                     luminanceSmoothing={0.9} 
-                    intensity={2.5} 
+                    intensity={isMobile ? 1.5 : 2.0} 
                     mipmapBlur 
                 />
-                <ChromaticAberration 
-                    offset={[0.002, 0.002]} 
-                    radialModulation={false}
-                    modulationOffset={0.5}
-                />
+                {!isMobile && (
+                    <ChromaticAberration 
+                        offset={[0.002, 0.002]} 
+                        radialModulation={false}
+                        modulationOffset={0.5}
+                    />
+                )}
                 <Noise opacity={0.05} />
                 <Vignette 
                     eskil={false} 

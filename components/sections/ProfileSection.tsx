@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Target, Activity, Zap, Clipboard, Check, Sparkles, AlertCircle } from 'lucide-react';
+import { Target, Activity, Zap, Clipboard, Check, Sparkles, AlertCircle, MessageSquare, Send, ChevronDown } from 'lucide-react';
 import { supabase } from '@/lib/db/supabase-client';
 import { useSessionStore } from '@/store/session-store';
 
@@ -30,6 +30,11 @@ export function ProfileSection() {
   const [profile, setProfile] = useState<any>(null);
   const [focusDays, setFocusDays] = useState(0);
   const [grammarPoints, setGrammarPoints] = useState<string[]>([]);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [feedbackDone, setFeedbackDone] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -217,6 +222,34 @@ ${weaknessesStr}`;
     });
   };
 
+  const handleFeedbackSubmit = async () => {
+    if (!feedbackText.trim() || feedbackSubmitting) return;
+    setFeedbackSubmitting(true);
+    setFeedbackError(null);
+    try {
+      const userId = localStorage.getItem('learniny_user_id') || 'anonymous';
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, message: feedbackText.trim(), page: 'profile' }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || '提交失败');
+      }
+      setFeedbackDone(true);
+      setFeedbackText('');
+      setTimeout(() => {
+        setFeedbackDone(false);
+        setFeedbackOpen(false);
+      }, 3000);
+    } catch (err: any) {
+      setFeedbackError(err.message || '提交失败，请稍后重试');
+    } finally {
+      setFeedbackSubmitting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="w-full h-full flex flex-col justify-center items-center pointer-events-none text-[#FFFFFF]">
@@ -227,8 +260,8 @@ ${weaknessesStr}`;
   }
 
   return (
-    <div className="w-full h-full flex flex-col justify-center p-6 md:p-12 pointer-events-auto overflow-y-auto text-[#FFFFFF]">
-      <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row items-stretch gap-8 md:gap-12">
+    <div className="w-full h-full flex flex-col justify-start pt-16 md:justify-center md:pt-0 p-6 md:p-12 pointer-events-auto overflow-y-auto text-[#FFFFFF]">
+      <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row items-stretch gap-6 md:gap-12">
         
         {/* 左侧：能力评估 */}
         <motion.div 
@@ -239,8 +272,8 @@ ${weaknessesStr}`;
         >
           <div className="bg-[#0D0D0D] border border-[#1A1A1A] rounded-3xl p-8 shadow-sm flex-1 flex flex-col justify-between">
             <div>
-              <h2 className="text-3xl font-display uppercase tracking-wider mb-2 text-[#FFFFFF]">能力评估</h2>
-              <p className="text-sm text-[#888888] font-mono tracking-widest uppercase mb-8">隐式直觉</p>
+              <h2 className="text-2xl md:text-3xl font-display uppercase tracking-wider mb-2 text-[#FFFFFF]">能力评估</h2>
+              <p className="text-xs md:text-sm text-[#888888] font-mono tracking-widest uppercase mb-6 md:mb-8">隐式直觉</p>
               
               <div className="space-y-6">
                 <div>
@@ -319,7 +352,7 @@ ${weaknessesStr}`;
         <div className="w-full md:w-2/3 flex flex-col gap-6">
           
           {/* 三个统计网格卡片 */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-3 md:gap-4">
             <motion.div 
               initial={{ opacity: 0, y: 15 }} 
               whileInView={{ opacity: 1, y: 0 }} 
@@ -346,7 +379,7 @@ ${weaknessesStr}`;
               initial={{ opacity: 0, y: 15 }} 
               whileInView={{ opacity: 1, y: 0 }} 
               transition={{ delay: 0.4 }} 
-              className="col-span-2 md:col-span-1 bg-[#0A0A0A] border border-[#00FF9D]/30 p-6 rounded-3xl flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden"
+              className="bg-[#0A0A0A] border border-[#00FF9D]/30 p-4 md:p-6 rounded-3xl flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden"
             >
               <div className="absolute inset-0 bg-[#00FF9D]/5" />
               <Zap className="w-6 h-6 text-[#00FF9D] mb-3 relative z-10" />
@@ -407,6 +440,75 @@ ${weaknessesStr}`;
                 建议将此段文本发送至对话机器人，引导其根据你的真实水平定制对话演练。
               </span>
             </div>
+          </motion.div>
+
+          {/* 用户建议提交面板 */}
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6 }}
+          >
+            <button
+              onClick={() => setFeedbackOpen(!feedbackOpen)}
+              className="w-full flex items-center justify-between px-5 py-3.5 rounded-2xl bg-[#0D0D0D] border border-[#1A1A1A] hover:border-[#333333] transition-all duration-300 group"
+            >
+              <div className="flex items-center gap-2.5">
+                <MessageSquare className="w-4 h-4 text-[#00E5FF]" />
+                <span className="text-sm text-[#CCCCCC] font-medium">有建议想说？</span>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-[#666666] transition-transform duration-300 ${feedbackOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {feedbackOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-2 bg-[#0A0A0A] border border-[#1A1A1A] rounded-2xl p-5 overflow-hidden"
+              >
+                {feedbackDone ? (
+                  <div className="flex flex-col items-center gap-3 py-4">
+                    <div className="w-10 h-10 rounded-full bg-[#00FF9D]/10 border border-[#00FF9D]/30 flex items-center justify-center">
+                      <Check className="w-5 h-5 text-[#00FF9D]" />
+                    </div>
+                    <span className="text-sm text-[#00FF9D] font-medium">感谢你的建议！</span>
+                    <span className="text-xs text-[#666666]">我们会认真阅读每一条反馈</span>
+                  </div>
+                ) : (
+                  <>
+                    <textarea
+                      value={feedbackText}
+                      onChange={(e) => setFeedbackText(e.target.value.slice(0, 500))}
+                      placeholder="告诉我们你的想法、建议或遇到的问题..."
+                      rows={3}
+                      className="w-full bg-[#060606] border border-[#1A1A1A] rounded-xl p-3 text-sm text-[#CCCCCC] placeholder:text-[#444444] focus:outline-none focus:border-[#00E5FF]/40 resize-none font-sans transition-colors duration-200"
+                    />
+                    <div className="flex items-center justify-between mt-3">
+                      <span className="text-[10px] text-[#444444] font-mono">{feedbackText.length}/500</span>
+                      <div className="flex items-center gap-3">
+                        {feedbackError && (
+                          <span className="text-xs text-[#FF3366]">{feedbackError}</span>
+                        )}
+                        <button
+                          onClick={handleFeedbackSubmit}
+                          disabled={!feedbackText.trim() || feedbackSubmitting}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-mono font-bold tracking-wider transition-all duration-300 border ${
+                            feedbackSubmitting
+                              ? 'bg-[#1A1A1A] border-[#1A1A1A] text-[#666666] cursor-wait'
+                              : feedbackText.trim()
+                                ? 'bg-[#00E5FF]/10 border-[#00E5FF]/40 text-[#00E5FF] hover:bg-[#00E5FF]/20 hover:border-[#00E5FF]/60'
+                                : 'bg-[#0A0A0A] border-[#1A1A1A] text-[#444444] cursor-not-allowed'
+                          }`}
+                        >
+                          <Send className="w-3 h-3" />
+                          {feedbackSubmitting ? '提交中...' : '提交建议'}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </motion.div>
+            )}
           </motion.div>
 
         </div>
