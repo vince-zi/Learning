@@ -717,32 +717,39 @@ export function PracticeSection() {
 
             {/* Input Area */}
             <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 bg-gradient-to-t from-app-bg via-app-bg to-transparent">
-              <form onSubmit={handleSend} autoComplete="off" className="relative flex items-center max-w-2xl mx-auto">
+              <form onSubmit={handleSend} autoComplete="off" className="relative flex items-end max-w-2xl mx-auto">
                 {/* Hidden fake input to confuse browser autofill */}
                 <input type="text" className="hidden" aria-hidden tabIndex={-1} autoComplete="off" readOnly />
-                <input
-                  type="search"
+                <textarea
                   value={input}
-                  onChange={e => setInput(e.target.value)}
+                  onChange={e => {
+                    setInput(e.target.value);
+                    // Auto-resize
+                    const el = e.target;
+                    el.style.height = 'auto';
+                    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+                  }}
                   onFocus={handleInputFocus}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend(e as any);
+                    }
+                  }}
                   autoComplete="off"
                   autoCorrect="off"
                   autoCapitalize="off"
                   spellCheck="false"
                   name="x9kq7z"
-                  placeholder="Type or speak (try 'I have went')..."
-                  className="w-full bg-surface-card border border-divider rounded-full py-4 pl-5 pr-14 text-[15px] focus:outline-none focus:border-text-secondary transition-colors placeholder:text-text-secondary font-normal text-text-primary shadow-lg [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden"
+                  rows={1}
+                  placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
+                  className="w-full bg-surface-card border border-divider rounded-2xl py-4 pl-5 pr-14 text-[15px] focus:outline-none focus:border-text-secondary transition-colors placeholder:text-text-secondary font-normal text-text-primary shadow-lg resize-none"
                 />
                 <button
                   type="submit"
-                  onClick={(e) => {
-                    if (!input.trim() || isThinking) return;
-                    e.preventDefault();
-                    handleSend(e as any);
-                  }}
                   disabled={!input.trim() || isThinking}
                   title={isThinking ? 'AI is responding...' : !input.trim() ? 'Type a message first' : 'Send'}
-                  className="absolute right-2 p-2.5 bg-brand-accent hover:bg-brand-accent/90 rounded-full text-[#000000] transition-colors disabled:opacity-50 disabled:hover:bg-brand-accent cursor-pointer"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 bg-brand-accent hover:bg-brand-accent/90 rounded-full text-[#000000] transition-colors disabled:opacity-50 disabled:hover:bg-brand-accent cursor-pointer"
                 >
                   <Send className="w-4 h-4" />
                 </button>
