@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { LiteModeToggle } from '@/components/layout/ClientLayout';
 
 const BEFORE_AFTER = [
   {
@@ -109,6 +110,11 @@ export function HomeSection({ onStartChat: _onStartChat }: { onStartChat: () => 
         <div className="mt-12 flex flex-col items-center gap-2 text-[10px] text-text-secondary/50 font-mono tracking-widest uppercase">
           <div className="w-6 h-6 rounded-full border border-divider/60 grid place-items-center animate-bounce">↓</div>
           <div>Scroll for details</div>
+        </div>
+
+        {/* Particle toggle — sits within the page, not fixed floating */}
+        <div className="mt-8 flex justify-center">
+          <LiteModeToggle />
         </div>
       </div>
 

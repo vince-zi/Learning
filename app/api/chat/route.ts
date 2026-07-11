@@ -16,6 +16,7 @@ import type { Message, ModuleType } from '@/core/models/session'
 import { photographyKnowledgeGraph } from '@/core/knowledge-graph/photography-graph'
 import { englishKnowledgeGraph } from '@/core/knowledge-graph/english-graph'
 import { v4 as uuidv4 } from 'uuid'
+import { checkQuota, incrementUsage } from '@/lib/quota'
 
 const LOCAL_TRANSLATION_CHALLENGES: Record<string, Array<{ cn: string; en: string; alternatives?: string[] }>> = {
   'grammar-tense': [
@@ -175,6 +176,18 @@ export async function POST(request: Request) {
         { error: 'sessionId and userMessage are required' },
         { status: 400 }
       )
+    }
+
+    // --- 0. 每日额度检查（在调用 DeepSeek API 之前）---
+    const effectiveUserId = userId || `anon_${uuidv4()}`
+    const quota = await checkQuota(effectiveUserId)
+    if (!quota.allowed) {
+      return NextResponse.json({
+        error: 'daily_quota_exceeded',
+        message: `你今天已用完 ${quota.limit} 条消息的免费额度，明天自动重置。`,
+        limit: quota.limit,
+        remaining: 0,
+      }, { status: 429 })
     }
 
     // --- 1. 获取会话信息与对话历史 ---
@@ -354,7 +367,52 @@ export async function POST(request: Request) {
       }
     }
 
-    const activeSystemPrompt = (isEnglish ? ENGLISH_SYSTEM_PROMPT : SYSTEM_PROMPT) + 
+    // --- 1.6 跨 session 个人上下文记忆（仅英语模块）---
+    // 从用户上一次会话中提取有意义的个人陈述，让 AI 在新 session 中"记住"用户
+    if (isEnglish && effectiveUserId) {
+      try {
+        const { data: prevSessions } = await supabase
+          .from('learning_sessions')
+          .select('id')
+          .eq('user_id', effectiveUserId)
+          .neq('id', sessionId)
+          .order('started_at', { ascending: false })
+          .limit(1)
+
+        if (prevSessions && prevSessions.length > 0) {
+          const { data: prevUserMsgs } = await supabase
+            .from('messages')
+            .select('content')
+            .eq('session_id', prevSessions[0].id)
+            .eq('role', 'user')
+            .order('created_at', { ascending: true })
+            .limit(30)
+
+          if (prevUserMsgs && prevUserMsgs.length > 0) {
+            const trivialPattern = /^(hi|hello|hey|yes|no|ok|okay|thanks|thank you|bye|goodbye|good night)$/i
+            const meaningful = prevUserMsgs
+              .map(m => m.content.trim())
+              .filter(c => {
+                if (c.length < 15) return false
+                if (trivialPattern.test(c)) return false
+                if (c === '[INIT_FREE_CONVERSATION]') return false
+                if (c === 'I am ready to review.') return false
+                return true
+              })
+              .slice(-10)
+
+            if (meaningful.length > 0) {
+              const contextBlock = meaningful.map(m => `- "${m}"`).join('\n')
+              userContextPrompt = `[User's Personal Context — things they mentioned in previous conversations]:\n${contextBlock}` + (userContextPrompt ? '\n\n' + userContextPrompt : '')
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch cross-session personal context:', err)
+      }
+    }
+
+    const activeSystemPrompt = (isEnglish ? ENGLISH_SYSTEM_PROMPT : SYSTEM_PROMPT) +
       (userContextPrompt ? `\n\n## USER HISTORICAL DATA CONTEXT:\nUse the following user data to customize the review or practice. Check if they made progress:\n${userContextPrompt}` : '')
     const questioningStyle = sessionData.questioning_style || 'gentle'
     
@@ -1310,6 +1368,8 @@ ${skeleton}
         temperature: 0.7,
       })
       aiResponse = response.content
+      // 成功调用 DeepSeek API 后，递增当日用量
+      await incrementUsage(effectiveUserId)
     }
 
     // --- 7. 解析回复与挑战任务 ---

@@ -37,23 +37,20 @@ function SafeBackground({ eventSource }: { eventSource: any }) {
   return <ThreeBackground eventSource={eventSource} isMobile={isMobile} />;
 }
 
-function LiteModeToggle() {
-  const { isLiteMode, setLiteMode, activeSection } = useSessionStore();
-
-  // Only show on home page
-  if (activeSection !== 'home') return null;
+export function LiteModeToggle() {
+  const { isLiteMode, setLiteMode } = useSessionStore();
 
   return (
     <button
       onClick={() => setLiteMode(!isLiteMode)}
       title={isLiteMode ? '开启粒子特效背景' : '关闭粒子特效，节省资源'}
-      className={`fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-mono tracking-wider transition-all duration-500 backdrop-blur-md border pointer-events-auto ${
+      className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-mono tracking-wider transition-all duration-500 backdrop-blur-md border pointer-events-auto ${
         isLiteMode
           ? 'bg-brand-accent/15 border-brand-accent/40 text-brand-accent shadow-[0_0_20px_rgba(0,255,157,0.25)] animate-pulse'
           : 'bg-[#0A0A0A]/80 border-[#1A1A1A] text-[#666666] hover:text-[#999999] hover:border-[#333333]'
       }`}
     >
-      <span className={`transition-transform duration-300 ${isLiteMode ? 'scale-110' : 'group-hover:scale-110'}`}>
+      <span className={`transition-transform duration-300 ${isLiteMode ? 'scale-110' : ''}`}>
         {isLiteMode ? '✨' : '🍃'}
       </span>
       <span className="hidden sm:inline">
@@ -81,8 +78,6 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       <LeftNav />
 
       <SafeBackground eventSource={mainRef} />
-
-      <LiteModeToggle />
 
       <FirstVisitGuide />
 
