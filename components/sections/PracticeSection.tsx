@@ -667,7 +667,9 @@ export function PracticeSection() {
           <>
             {/* Fixed Top Bar — always visible */}
             <div className="absolute top-0 left-0 right-0 z-20 flex justify-between items-center px-4 md:px-8 py-3 bg-gradient-to-b from-app-bg via-app-bg/95 to-transparent">
-              <span className="text-[10px] text-text-secondary font-mono tracking-widest uppercase">ZPD Session Active</span>
+              <span className="text-[10px] text-text-secondary font-mono tracking-widest uppercase">
+                {isThinking ? '⏳ AI thinking...' : messages.length > 0 ? `💬 ${messages.length} msgs` : '📝 Ready'}
+              </span>
               <button
                 onClick={handleEndSession}
                 disabled={isEndingSession}
@@ -731,9 +733,15 @@ export function PracticeSection() {
                   placeholder="Type or speak (try 'I have went')..."
                   className="w-full bg-surface-card border border-divider rounded-full py-4 pl-5 pr-14 text-[15px] focus:outline-none focus:border-text-secondary transition-colors placeholder:text-text-secondary font-normal text-text-primary shadow-lg [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden"
                 />
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
+                  onClick={(e) => {
+                    if (!input.trim() || isThinking) return;
+                    e.preventDefault();
+                    handleSend(e as any);
+                  }}
                   disabled={!input.trim() || isThinking}
+                  title={isThinking ? 'AI is responding...' : !input.trim() ? 'Type a message first' : 'Send'}
                   className="absolute right-2 p-2.5 bg-brand-accent hover:bg-brand-accent/90 rounded-full text-[#000000] transition-colors disabled:opacity-50 disabled:hover:bg-brand-accent cursor-pointer"
                 >
                   <Send className="w-4 h-4" />
