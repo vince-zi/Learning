@@ -286,15 +286,16 @@ export function PracticeSection() {
   const [msgExtras, setMsgExtras] = useState<Record<string, { _errorType?: string; _correctedText?: string; _hintText?: string }>>({});
   const containerRef = useRef<HTMLDivElement>(null);
   const [isEndingSession, setIsEndingSession] = useState(false);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
   useEffect(() => {
-    const saved = localStorage.getItem('learniny_last_session_id');
     // Auto-clean old mock_user data
     if (localStorage.getItem('learniny_user_id') === 'mock_user') {
       localStorage.removeItem('learniny_user_id');
     }
+    // Show saved session as "继续上次对话" option, but don't auto-load
+    const saved = localStorage.getItem('learniny_last_session_id');
     if (saved) {
       setLastSessionId(saved);
-      loadSessionMessages(saved);
     }
   }, []);
 
@@ -319,6 +320,7 @@ export function PracticeSection() {
           return;
         }
         setActiveSessionId(sessId);
+        useSessionStore.getState().setActiveChatSessionId(sessId);
         if (data.session) {
           setSession(data.session);
         }
@@ -351,6 +353,7 @@ export function PracticeSection() {
         if (data.success && data.session) {
           const sessId = data.session.id;
           setActiveSessionId(sessId);
+          useSessionStore.getState().setActiveChatSessionId(sessId);
           setSession(data.session);
           useSessionStore.getState().setMessages([]);
           // Save backend-generated userId for subsequent requests
@@ -612,6 +615,7 @@ export function PracticeSection() {
       localStorage.removeItem('learniny_last_session_id');
       setLastSessionId(null);
       setActiveSessionId(null);
+      useSessionStore.getState().setActiveChatSessionId(null);
       setSession(null);
       useSessionStore.getState().setActiveSection('home');
 
@@ -653,7 +657,16 @@ export function PracticeSection() {
               不提供直接的答案，而是在自然对话中通过启发式提问，引导你自我发现英语的句法规律与表达直觉。
             </p>
             <div className="flex flex-col gap-4 w-full max-w-xs mx-auto">
-              <button 
+              {lastSessionId && (
+                <button
+                  onClick={handleResumeLastSession}
+                  disabled={isInitializing}
+                  className="w-full px-6 py-3.5 bg-surface-card border border-brand-accent/30 text-brand-accent text-xs font-bold tracking-widest uppercase hover:scale-105 transition-transform rounded-full disabled:opacity-55 cursor-pointer text-center"
+                >
+                  {isInitializing ? '加载中...' : '继续上次对话'}
+                </button>
+              )}
+              <button
                 onClick={handleStartNewSession}
                 disabled={isInitializing}
                 className="w-full px-6 py-3.5 bg-brand-accent text-[#000000] text-xs font-bold tracking-widest uppercase hover:scale-105 transition-transform rounded-full shadow-[0_0_20px_rgba(0,255,157,0.2)] disabled:opacity-55 cursor-pointer text-center"
@@ -667,11 +680,9 @@ export function PracticeSection() {
           <>
             {/* Fixed Top Bar — always visible */}
             <div className="absolute top-0 left-0 right-0 z-20 flex justify-between items-center px-4 md:px-8 py-3 bg-gradient-to-b from-app-bg via-app-bg/95 to-transparent">
-              <span className="text-[10px] text-text-secondary font-mono tracking-widest uppercase">
-                {isThinking ? '⏳ AI thinking...' : messages.length > 0 ? `💬 ${messages.length} msgs` : '📝 Ready'}
-              </span>
+              <span className="text-[10px] text-text-secondary font-mono tracking-widest uppercase">ZPD Session Active</span>
               <button
-                onClick={handleEndSession}
+                onClick={() => setShowEndConfirm(true)}
                 disabled={isEndingSession}
                 className="px-3.5 py-1.5 bg-brand-error/5 hover:bg-brand-error/15 border border-brand-error/25 hover:border-brand-error/50 rounded-full text-[10px] font-bold text-brand-error tracking-wider uppercase transition-all duration-300 disabled:opacity-50 cursor-pointer shadow-[0_0_12px_rgba(255,75,75,0.05)] animate-pulse"
               >
@@ -717,9 +728,7 @@ export function PracticeSection() {
 
             {/* Input Area */}
             <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 bg-gradient-to-t from-app-bg via-app-bg to-transparent">
-              <div className="relative flex items-end max-w-2xl mx-auto">
-                {/* Hidden fake input to confuse browser autofill */}
-                <input type="text" className="hidden" aria-hidden tabIndex={-1} autoComplete="off" readOnly />
+              <div className="max-w-2xl mx-auto">
                 <textarea
                   value={input}
                   onChange={e => {
@@ -730,7 +739,7 @@ export function PracticeSection() {
                   }}
                   onFocus={handleInputFocus}
                   onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
+                    if (e.key === 'Enter') {
                       e.preventDefault();
                       handleSend(e as any);
                     }
@@ -739,20 +748,10 @@ export function PracticeSection() {
                   autoCorrect="off"
                   autoCapitalize="off"
                   spellCheck="false"
-                  name="x9kq7z"
                   rows={1}
-                  placeholder="Type a message... (Enter to send, Shift+Enter to wrap)"
-                  className="w-full bg-surface-card border border-divider rounded-2xl py-4 pl-5 pr-14 text-[15px] focus:outline-none focus:border-text-secondary transition-colors placeholder:text-text-secondary font-normal text-text-primary shadow-lg resize-none"
+                  placeholder="输入内容，Enter 发送"
+                  className="w-full bg-surface-card border border-divider rounded-2xl py-4 px-5 text-[15px] focus:outline-none focus:border-text-secondary transition-colors placeholder:text-text-secondary font-normal text-text-primary shadow-lg resize-none overflow-hidden scrollbar-none"
                 />
-                <button
-                  type="button"
-                  onClick={() => handleSend({ preventDefault: () => {} } as any)}
-                  disabled={!input.trim() || isThinking}
-                  title={isThinking ? 'AI is responding...' : !input.trim() ? 'Type a message first' : 'Send'}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2.5 bg-brand-accent hover:bg-brand-accent/90 rounded-full text-[#000000] transition-colors disabled:opacity-50 disabled:hover:bg-brand-accent cursor-pointer pointer-events-auto"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
               </div>
             </div>
           </>
@@ -760,6 +759,32 @@ export function PracticeSection() {
 
       </div>
 
+      {/* End Session Confirmation Modal */}
+      {showEndConfirm && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
+          <div className="bg-surface-card border border-divider rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center">
+            <h3 className="text-lg font-display text-text-primary mb-2">结束对话</h3>
+            <p className="text-sm text-text-secondary mb-8 leading-relaxed">
+              确定结束：生成今日发现，点亮星图<br />
+              保留对话：退出聊天，下次继续
+            </p>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => { setShowEndConfirm(false); handleEndSession(); }}
+                className="w-full px-6 py-3.5 bg-brand-accent text-[#000000] text-sm font-bold tracking-wider rounded-2xl hover:scale-[1.02] transition-transform"
+              >
+                确定结束，形成今日发现
+              </button>
+              <button
+                onClick={() => { setShowEndConfirm(false); setActiveSessionId(null); useSessionStore.getState().setActiveChatSessionId(null); useSessionStore.getState().setActiveSection('home'); }}
+                className="w-full px-6 py-3.5 bg-transparent border border-divider text-text-secondary text-sm font-medium tracking-wider rounded-2xl hover:border-text-secondary hover:text-text-primary transition-all"
+              >
+                保留对话，稍后继续
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

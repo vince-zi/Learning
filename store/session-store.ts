@@ -66,6 +66,10 @@ export interface SessionStore {
   isLiteMode: boolean
   setLiteMode: (lite: boolean) => void
 
+  // --- 对话进行中（控制导航栏显隐） ---
+  activeChatSessionId: string | null
+  setActiveChatSessionId: (id: string | null) => void
+
   // --- 重置 ---
   resetSession: () => void
 }
@@ -86,6 +90,9 @@ export const useSessionStore = create<SessionStore>((set) => ({
   setSummaryData: (summaryData) => set({ summaryData }),
 
   // Default lite mode ON for new users — prevents Three.js download until user opts in
+  activeChatSessionId: null,
+  setActiveChatSessionId: (activeChatSessionId) => set({ activeChatSessionId }),
+
   isLiteMode: typeof window === 'undefined' || localStorage.getItem('learniny_lite_mode') !== '0',
   setLiteMode: (lite) => {
     if (typeof window !== 'undefined') {

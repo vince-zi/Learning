@@ -11,6 +11,10 @@ export function LeftNav() {
   const lastScrollTime = useRef(0);
   const touchStartY = useRef(0);
 
+  // Hide nav during active chat, show on welcome screen
+  const { activeChatSessionId } = useSessionStore();
+  if (activeSection === 'practice' && activeChatSessionId) return null;
+
   const tabs = [
     { name: 'home' as const, id: 'section-home', label: '主页' },
     { name: 'practice' as const, id: 'section-practice', label: '对话' },
@@ -60,14 +64,16 @@ export function LeftNav() {
   };
 
   return (
-    <div 
-      onWheel={handleWheel}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-      className="fixed right-0 top-0 w-24 h-full z-50 flex items-center justify-center bg-transparent pointer-events-auto group/strip cursor-ns-resize"
+    <div
+      className="fixed right-0 top-0 w-10 h-full z-50 flex items-center justify-center bg-transparent pointer-events-none group/strip"
     >
       {/* Visual Dot Ticks bar */}
-      <div className="flex flex-col gap-5 items-center opacity-70 md:opacity-30 md:group-hover/strip:opacity-100 transition-opacity duration-300">
+      <div
+        onWheel={handleWheel}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        className="flex flex-col gap-5 items-center opacity-70 md:opacity-30 md:group-hover/strip:opacity-100 transition-opacity duration-300 pointer-events-auto cursor-ns-resize py-8"
+      >
         {tabs.map((tab) => {
           const isActive = activeSection === tab.name;
           return (
