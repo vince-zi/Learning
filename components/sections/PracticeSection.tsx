@@ -422,7 +422,7 @@ export function PracticeSection() {
         } catch (err) {
           console.error('Failed to send init signal:', err);
         } finally {
-          if (active) setThinking(false);
+          setThinking(false);  // always reset — addMessage may trigger cleanup
         }
       };
       sendInitSignal();
