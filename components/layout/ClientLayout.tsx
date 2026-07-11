@@ -37,19 +37,21 @@ function SafeBackground({ eventSource }: { eventSource: any }) {
 }
 
 function LiteModeToggle() {
-  const { isLiteMode, setLiteMode } = useSessionStore();
+  const { isLiteMode, setLiteMode, activeSection } = useSessionStore();
+
+  // Only show on home page
+  if (activeSection !== 'home') return null;
 
   return (
     <button
       onClick={() => setLiteMode(!isLiteMode)}
       title={isLiteMode ? '恢复粒子特效' : '关闭粒子特效，节省资源'}
-      className={`fixed bottom-5 right-5 z-50 flex items-center gap-2 px-3.5 py-2 rounded-full text-[11px] font-mono tracking-wider transition-all duration-500 backdrop-blur-md border pointer-events-auto group ${
+      className={`fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3.5 py-2 rounded-full text-[11px] font-mono tracking-wider transition-all duration-500 backdrop-blur-md border pointer-events-auto ${
         isLiteMode
           ? 'bg-brand-accent/10 border-brand-accent/30 text-brand-accent shadow-[0_0_12px_rgba(0,255,157,0.15)]'
           : 'bg-[#0A0A0A]/80 border-[#1A1A1A] text-[#666666] hover:text-[#999999] hover:border-[#333333]'
       }`}
     >
-      {/* Leaf / Sparkle icon */}
       <span className={`transition-transform duration-300 ${isLiteMode ? 'scale-110' : 'group-hover:scale-110'}`}>
         {isLiteMode ? '✨' : '🍃'}
       </span>
