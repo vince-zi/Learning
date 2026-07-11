@@ -730,19 +730,13 @@ export function PracticeSection() {
                     el.style.height = Math.min(el.scrollHeight, 160) + 'px';
                   }}
                   onFocus={handleInputFocus}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSend(e as any);
-                    }
-                  }}
                   autoComplete="off"
                   autoCorrect="off"
                   autoCapitalize="off"
                   spellCheck="false"
                   name="x9kq7z"
                   rows={1}
-                  placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
+                  placeholder="Type a message... (Enter to wrap, click → to send)"
                   className="w-full bg-surface-card border border-divider rounded-2xl py-4 pl-5 pr-14 text-[15px] focus:outline-none focus:border-text-secondary transition-colors placeholder:text-text-secondary font-normal text-text-primary shadow-lg resize-none"
                 />
                 <button
