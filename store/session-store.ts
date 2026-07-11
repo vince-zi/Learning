@@ -85,7 +85,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
   summaryData: null,
   setSummaryData: (summaryData) => set({ summaryData }),
 
-  isLiteMode: typeof window !== 'undefined' && localStorage.getItem('learniny_lite_mode') === '1',
+  // Default lite mode ON for new users — prevents Three.js download until user opts in
+  isLiteMode: typeof window === 'undefined' || localStorage.getItem('learniny_lite_mode') !== '0',
   setLiteMode: (lite) => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('learniny_lite_mode', lite ? '1' : '0');

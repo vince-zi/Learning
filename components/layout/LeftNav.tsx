@@ -64,7 +64,7 @@ export function LeftNav() {
       onWheel={handleWheel}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-      className="fixed left-0 top-0 w-24 h-full z-50 flex items-center justify-center bg-transparent pointer-events-auto group/strip cursor-ns-resize"
+      className="fixed right-0 top-0 w-24 h-full z-50 flex items-center justify-center bg-transparent pointer-events-auto group/strip cursor-ns-resize"
     >
       {/* Visual Dot Ticks bar */}
       <div className="flex flex-col gap-5 items-center opacity-70 md:opacity-30 md:group-hover/strip:opacity-100 transition-opacity duration-300">
@@ -92,7 +92,7 @@ export function LeftNav() {
               />
 
               {/* Subtle text label shown only on dot hover */}
-              <span className="absolute left-8 px-2 py-1 rounded bg-[#0A0A0A]/95 border border-divider text-[10px] text-text-secondary font-mono tracking-widest uppercase opacity-0 group-hover/dot:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-xl">
+              <span className="absolute right-8 px-2 py-1 rounded bg-[#0A0A0A]/95 border border-divider text-[10px] text-text-secondary font-mono tracking-widest uppercase opacity-0 group-hover/dot:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-xl">
                 {tab.label}
               </span>
             </button>

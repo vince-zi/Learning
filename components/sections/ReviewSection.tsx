@@ -4,6 +4,7 @@ import { ChevronRight, X, Check, Flame, BookOpen, Target, Loader2, ChevronDown, 
 import { supabase } from '@/lib/db/supabase-client';
 import { englishKnowledgeGraph } from '@/core/knowledge-graph/english-graph';
 import { useSessionStore } from '@/store/session-store';
+import { getUserId } from '@/lib/user-id';
 
 const tokens = {
   surfaceAI: "#0A0A0A",
@@ -764,7 +765,7 @@ export function ReviewSection() {
   };
 
   const fetchRecords = async () => {
-    const userId = localStorage.getItem('learniny_user_id') || 'mock_user';
+    const userId = getUserId();
     const { data } = await supabase.from('error_records').select('*').eq('user_id', userId).order('created_at', { ascending: false });
     if (data) {
       // batch-fetch sessions to get context (topic names / theme)
@@ -998,7 +999,7 @@ export function ReviewSection() {
           )}
         </div>
 
-        {reviewing && <ReviewModal record={reviewing} userId={localStorage.getItem('learniny_user_id') || 'mock_user'} onClose={() => setReviewing(null)} onComplete={fetchRecords} />}
+        {reviewing && <ReviewModal record={reviewing} userId={getUserId() || ''} onClose={() => setReviewing(null)} onComplete={fetchRecords} />}
       </div>
     </div>
   );

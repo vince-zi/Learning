@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Lightbulb, Languages, Sparkles, MessageSquare, CheckCircle2, Info } from 'lucide-react';
 import { useSessionStore } from '@/store/session-store';
+import { getUserId, setUserId } from '@/lib/user-id';
 
 const ERROR_HINT_MAP: Record<string, { short: string; tip: string }> = {
   'grammar-tense':       { short: '时态', tip: '什么时候发生的事，动词就要穿什么衣服。昨天的事 → 过去式(went/did)；正在发生 → 进行时(going)；平时常做的事 → 现在式(go)。' },
@@ -287,6 +288,10 @@ export function PracticeSection() {
   const [isEndingSession, setIsEndingSession] = useState(false);
   useEffect(() => {
     const saved = localStorage.getItem('learniny_last_session_id');
+    // Auto-clean old mock_user data
+    if (localStorage.getItem('learniny_user_id') === 'mock_user') {
+      localStorage.removeItem('learniny_user_id');
+    }
     if (saved) {
       setLastSessionId(saved);
       loadSessionMessages(saved);
@@ -296,14 +301,19 @@ export function PracticeSection() {
   // Fetch messages if a session is loaded
   const loadSessionMessages = (sessId: string) => {
     setIsInitializing(true);
-    fetch(`/api/sessions/${sessId}/messages`)
+    // 8s timeout — don't hang forever on stale sessions
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    fetch(`/api/sessions/${sessId}/messages`, { signal: controller.signal })
       .then(res => {
         if (!res.ok) throw new Error('Session not found');
         return res.json();
       })
       .then(data => {
+        clearTimeout(timeout);
         if (data.session === null) {
-          // Invalid session, clear saved ID
+          // Invalid session, clear saved IDs
           localStorage.removeItem('learniny_last_session_id');
           setLastSessionId(null);
           return;
@@ -319,7 +329,8 @@ export function PracticeSection() {
         }
       })
       .catch(err => {
-        console.error(err);
+        clearTimeout(timeout);
+        console.error('Session load failed:', err.message);
         localStorage.removeItem('learniny_last_session_id');
         setLastSessionId(null);
       })
@@ -333,7 +344,7 @@ export function PracticeSection() {
     fetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: 'mock_user', module: 'english', theme: 'Free Conversation' })
+      body: JSON.stringify({ module: 'english', theme: 'Free Conversation' })
     })
       .then(res => res.json())
       .then(data => {
@@ -342,6 +353,10 @@ export function PracticeSection() {
           setActiveSessionId(sessId);
           setSession(data.session);
           useSessionStore.getState().setMessages([]);
+          // Save backend-generated userId for subsequent requests
+          if (data.session.userId && data.session.userId !== 'mock_user') {
+            setUserId(data.session.userId);
+          }
         }
       })
       .catch(err => console.error(err))
@@ -386,7 +401,7 @@ export function PracticeSection() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               sessionId: activeSessionId,
-              userId: 'mock_user',
+              userId: getUserId() || undefined,
               userMessage: '[INIT_FREE_CONVERSATION]',
               module: 'english',
               roundNumber: 1,
@@ -437,7 +452,7 @@ export function PracticeSection() {
     // Save session ID to localStorage ONLY when user actually sends a message!
     if (localStorage.getItem('learniny_last_session_id') !== activeSessionId) {
       localStorage.setItem('learniny_last_session_id', activeSessionId);
-      localStorage.setItem('learniny_user_id', 'mock_user');
+      setUserId(getUserId() || '');  // ensure userId is persisted for session lifecycle
       setLastSessionId(activeSessionId);
     }
 
@@ -470,7 +485,7 @@ export function PracticeSection() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sessionId: activeSessionId,
-            userId: 'mock_user',
+            userId: getUserId() || undefined,
             userMessage: userText,
             module: 'english',
             roundNumber: messages.filter(m => m.role === 'user').length + 1,
@@ -566,7 +581,7 @@ export function PracticeSection() {
     }, 10000);
 
     try {
-      const userId = localStorage.getItem('learniny_user_id') || 'mock_user';
+      const userId = getUserId() || undefined;
       // 1. 调用 POST /api/discoveries 自动抽提学习发现与评估，点亮星图
       const res = await fetch('/api/discoveries', {
         method: 'POST',

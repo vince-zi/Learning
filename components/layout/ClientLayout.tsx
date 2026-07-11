@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { LeftNav } from './LeftNav';
 import { useSessionStore } from '@/store/session-store';
+import { FirstVisitGuide } from '@/components/ui/FirstVisitGuide';
 
 // Lazy-load Three.js — only downloads when 3D background actually renders
 const ThreeBackground = dynamic(() => import('./ThreeBackground'), {
@@ -45,10 +46,10 @@ function LiteModeToggle() {
   return (
     <button
       onClick={() => setLiteMode(!isLiteMode)}
-      title={isLiteMode ? '恢复粒子特效' : '关闭粒子特效，节省资源'}
-      className={`fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3.5 py-2 rounded-full text-[11px] font-mono tracking-wider transition-all duration-500 backdrop-blur-md border pointer-events-auto ${
+      title={isLiteMode ? '开启粒子特效背景' : '关闭粒子特效，节省资源'}
+      className={`fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-mono tracking-wider transition-all duration-500 backdrop-blur-md border pointer-events-auto ${
         isLiteMode
-          ? 'bg-brand-accent/10 border-brand-accent/30 text-brand-accent shadow-[0_0_12px_rgba(0,255,157,0.15)]'
+          ? 'bg-brand-accent/15 border-brand-accent/40 text-brand-accent shadow-[0_0_20px_rgba(0,255,157,0.25)] animate-pulse'
           : 'bg-[#0A0A0A]/80 border-[#1A1A1A] text-[#666666] hover:text-[#999999] hover:border-[#333333]'
       }`}
     >
@@ -56,7 +57,7 @@ function LiteModeToggle() {
         {isLiteMode ? '✨' : '🍃'}
       </span>
       <span className="hidden sm:inline">
-        {isLiteMode ? '恢复特效' : '轻松模式'}
+        {isLiteMode ? '开启粒子特效' : '轻松模式'}
       </span>
     </button>
   );
@@ -82,6 +83,8 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       <SafeBackground eventSource={mainRef} />
 
       <LiteModeToggle />
+
+      <FirstVisitGuide />
 
       <div className="absolute inset-0 z-10 overflow-hidden" style={{ transform: 'translate3d(0, 0, 0)' }}>
         {children}

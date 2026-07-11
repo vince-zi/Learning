@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Target, Activity, Zap, Clipboard, Check, Sparkles, AlertCircle, MessageSquare, Send, ChevronDown } from 'lucide-react';
 import { supabase } from '@/lib/db/supabase-client';
 import { useSessionStore } from '@/store/session-store';
+import { getUserId } from '@/lib/user-id';
 
 function getFriendlyErrorName(type: string): string {
   const names: Record<string, string> = {
@@ -44,7 +45,7 @@ export function ProfileSection() {
     const loadProfileData = async () => {
       setLoading(true);
       try {
-        const userId = localStorage.getItem('learniny_user_id') || 'mock_user';
+        const userId = getUserId();
         
         // 1. 获取 profile
         const { data: profileData } = await supabase
@@ -227,7 +228,7 @@ ${weaknessesStr}`;
     setFeedbackSubmitting(true);
     setFeedbackError(null);
     try {
-      const userId = localStorage.getItem('learniny_user_id') || 'anonymous';
+      const userId = getUserId() || 'anonymous';
       const res = await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -343,6 +344,9 @@ ${weaknessesStr}`;
                 <p className="text-[11px] leading-normal text-[#666666]">
                   基于你在 Learniny 的口语实战对话和语法纠错记录实时计算。多开启对话可以提高评估精度。
                 </p>
+              </div>
+              <div className="mt-3 text-center">
+                <span className="text-[9px] font-mono text-[#333333] select-all">{getUserId() || '...'}</span>
               </div>
             </div>
           </div>

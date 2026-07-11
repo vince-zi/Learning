@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Network, Sparkles, Clock, Box } from 'lucide-react';
 import { supabase } from '@/lib/db/supabase-client';
 import { useSessionStore } from '@/store/session-store';
+import { getUserId } from '@/lib/user-id';
 
 export function DiscoverySection() {
   const [discoveries, setDiscoveries] = useState<any[]>([]);
@@ -20,7 +21,7 @@ export function DiscoverySection() {
   useEffect(() => {
     if (activeSection !== 'discovery') return;
 
-    const userId = localStorage.getItem('learniny_user_id') || 'mock_user';
+    const userId = getUserId();
     if (!userId) {
       setIsLoading(false);
       return;
