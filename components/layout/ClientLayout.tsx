@@ -64,7 +64,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   const mainRef = React.useRef<HTMLDivElement>(null);
 
   return (
-    <div ref={mainRef} className="relative w-full h-screen bg-app-bg text-text-primary font-sans selection:bg-brand-accent/30 overflow-hidden">
+    <div ref={mainRef} className="relative w-full h-dvh bg-app-bg text-text-primary font-sans selection:bg-brand-accent/30 overflow-hidden">
 
       {/* HTML Ambient Flowing Media Background */}
       <div className="absolute inset-0 z-0 pointer-events-none">

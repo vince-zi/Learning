@@ -51,7 +51,7 @@ export default function SPAHome() {
           <section 
             key={sec.id} 
             id={sec.id} 
-            className="w-full h-screen flex-shrink-0 relative overflow-hidden"
+            className="w-full h-dvh flex-shrink-0 relative overflow-hidden"
           >
             {sec.comp}
           </section>

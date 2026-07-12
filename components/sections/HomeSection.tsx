@@ -113,8 +113,9 @@ export function HomeSection({ onStartChat: _onStartChat }: { onStartChat: () => 
         </div>
 
         {/* Particle toggle — sits within the page, not fixed floating */}
-        <div className="mt-8 flex justify-center">
+        <div className="mt-8 flex flex-col items-center gap-1.5">
           <LiteModeToggle />
+          <span className="text-[9px] text-text-secondary/40 font-mono">提示：手机端为降低能耗，建议不要开启粒子特效</span>
         </div>
       </div>
 

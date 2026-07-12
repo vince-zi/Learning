@@ -335,7 +335,7 @@ ${weaknessesStr}`;
   }
 
   return (
-    <div className="w-full h-full flex flex-col justify-start pt-16 md:justify-center md:pt-0 p-6 md:p-12 pointer-events-auto overflow-y-auto text-[#FFFFFF]">
+    <div className="w-full h-full flex flex-col justify-start pt-14 md:justify-center md:pt-0 p-4 sm:p-6 md:p-12 pointer-events-auto overflow-y-auto text-[#FFFFFF]">
       <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row items-stretch gap-6 md:gap-12">
         
         {/* 左侧：能力评估 */}
@@ -345,12 +345,12 @@ ${weaknessesStr}`;
           viewport={{ once: false, amount: 0.3 }}
           className="w-full md:w-1/3 flex flex-col"
         >
-          <div className="bg-[#0D0D0D] border border-[#1A1A1A] rounded-3xl p-8 shadow-sm flex-1 flex flex-col justify-between">
+          <div className="bg-[#0D0D0D] border border-[#1A1A1A] rounded-3xl p-5 md:p-8 shadow-sm flex-1 flex flex-col justify-between">
             <div>
-              <h2 className="text-2xl md:text-3xl font-display uppercase tracking-wider mb-2 text-[#FFFFFF]">能力评估</h2>
-              <p className="text-xs md:text-sm text-[#888888] font-mono tracking-widest uppercase mb-6 md:mb-8">隐式直觉</p>
+              <h2 className="text-xl md:text-3xl font-display uppercase tracking-wider mb-1 md:mb-2 text-[#FFFFFF]">能力评估</h2>
+              <p className="text-[10px] md:text-sm text-[#888888] font-mono tracking-widest uppercase mb-4 md:mb-8">隐式直觉</p>
               
-              <div className="space-y-6">
+              <div className="space-y-4 md:space-y-6">
                 <div>
                   <div className="flex justify-between text-xs mb-2">
                     <span className="text-[#888888] uppercase tracking-wider">表达流利度</span>
@@ -398,9 +398,9 @@ ${weaknessesStr}`;
               </div>
 
               {profile?.strengths && profile.strengths.length > 0 && (
-                <div className="mt-8 pt-6 border-t border-[#1A1A1A]">
-                  <h4 className="text-[10px] font-mono tracking-widest text-[#00FF9D] uppercase mb-3">我的强项 / Strengths</h4>
-                  <ul className="space-y-2.5 text-xs text-[#888888] font-normal leading-relaxed">
+                <div className="mt-5 pt-4 md:mt-8 md:pt-6 border-t border-[#1A1A1A]">
+                  <h4 className="text-[10px] font-mono tracking-widest text-[#00FF9D] uppercase mb-2 md:mb-3">我的强项 / Strengths</h4>
+                  <ul className="space-y-2 text-xs text-[#888888] font-normal leading-relaxed">
                     {profile.strengths.slice(0, 3).map((s: string, idx: number) => (
                       <li key={idx} className="flex items-start gap-2">
                         <span className="text-[#00FF9D] font-bold mt-0.5">•</span>
@@ -412,10 +412,10 @@ ${weaknessesStr}`;
               )}
             </div>
 
-            <div className="mt-8 pt-6 border-t border-[#1A1A1A] space-y-4">
+            <div className="mt-5 pt-4 md:mt-8 md:pt-6 border-t border-[#1A1A1A] space-y-3 md:space-y-4">
               <div className="flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 text-[#888888] mt-0.5 flex-shrink-0" />
-                <p className="text-[11px] leading-normal text-[#666666]">
+                <p className="text-[10px] md:text-[11px] leading-normal text-[#666666]">
                   基于你在 Learniny 的口语实战对话和语法纠错记录实时计算。多开启对话可以提高评估精度。
                 </p>
               </div>
@@ -506,7 +506,7 @@ ${weaknessesStr}`;
               initial={{ opacity: 0, y: 15 }} 
               whileInView={{ opacity: 1, y: 0 }} 
               transition={{ delay: 0.2 }} 
-              className="bg-[#0D0D0D] border border-[#1A1A1A] p-6 rounded-3xl flex flex-col items-center justify-center text-center shadow-sm"
+              className="bg-[#0D0D0D] border border-[#1A1A1A] p-4 md:p-6 rounded-3xl flex flex-col items-center justify-center text-center shadow-sm"
             >
               <Target className="w-6 h-6 text-[#00E5FF] mb-3" />
               <span className="text-2xl font-mono mb-1 text-[#FFFFFF] font-bold">{focusDays}</span>
@@ -517,7 +517,7 @@ ${weaknessesStr}`;
               initial={{ opacity: 0, y: 15 }} 
               whileInView={{ opacity: 1, y: 0 }} 
               transition={{ delay: 0.3 }} 
-              className="bg-[#0D0D0D] border border-[#1A1A1A] p-6 rounded-3xl flex flex-col items-center justify-center text-center shadow-sm"
+              className="bg-[#0D0D0D] border border-[#1A1A1A] p-4 md:p-6 rounded-3xl flex flex-col items-center justify-center text-center shadow-sm"
             >
               <Activity className="w-6 h-6 text-[#00FF9D] mb-3" />
               <span className="text-2xl font-mono mb-1 text-[#FFFFFF] font-bold">{formatVocabularySize(vocabSize)}</span>
