@@ -148,7 +148,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
     }
   };
 
-  // Capture mouse move relative to central text block for the magic mask
+  // Capture mouse move relative to the centered concept text container for pixel-perfect mask alignment
   const handleWordMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     setMousePos({
@@ -201,29 +201,32 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
       className="w-full h-full text-[#FFFFFF] relative overflow-hidden select-none"
     >
       {/* Persistent CTA Button (Visible on Frames 1-4, fades out on Frame 5) */}
-      <AnimatePresence>
-        {activeFrame < 5 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-12 right-6 md:right-12 z-50 pointer-events-auto flex flex-col items-end gap-2"
-          >
-            <button
-              onClick={onStartChat}
-              className="group relative inline-flex items-center gap-3 text-xs font-mono tracking-widest text-brand-accent font-bold cursor-pointer transition-all duration-300"
+      {/* Positioned relative to max-w-7xl main content container to prevent moving off-screen */}
+      <div className="absolute inset-0 w-full h-full max-w-7xl mx-auto px-6 md:px-12 py-12 pointer-events-none z-50">
+        <AnimatePresence>
+          {activeFrame < 5 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+              className="absolute bottom-12 right-6 md:right-12 pointer-events-auto flex flex-col items-end gap-2"
             >
-              <span>[ START CHAT // 立即开启 ]</span>
-              <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
-              <span className="absolute bottom-[-4px] left-0 w-0 h-[1px] bg-brand-accent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:w-full" />
-            </button>
-            <div className="text-[8px] text-text-secondary/20 font-mono uppercase tracking-widest mt-1">
-              {activeFrame === 1 ? 'SCROLL DOWN TO LEARN MORE' : `FRAME 0${activeFrame} // 05`}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <button
+                onClick={onStartChat}
+                className="group relative inline-flex items-center gap-3 text-xs font-mono tracking-widest text-brand-accent font-bold cursor-pointer transition-all duration-300"
+              >
+                <span>[ START CHAT // 立即开启 ]</span>
+                <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
+                <span className="absolute bottom-[-4px] left-0 w-0 h-[1px] bg-brand-accent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:w-full" />
+              </button>
+              <div className="text-[8px] text-text-secondary/20 font-mono uppercase tracking-widest mt-1">
+                {activeFrame === 1 ? 'SCROLL DOWN TO LEARN MORE' : `FRAME 0${activeFrame} // 05`}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* Scene 1: Conceptual Spatial Hero (Frame 1) */}
       <motion.div
@@ -247,14 +250,13 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
           </div>
 
           {/* Center concept word with interactive mouse mask window */}
-          <div 
-            onMouseMove={handleWordMouseMove}
-            onMouseEnter={() => setIsWordHovered(true)}
-            onMouseLeave={() => setIsWordHovered(false)}
-            className="flex flex-col items-center justify-center pointer-events-auto py-12 cursor-default"
-          >
-            <div className="relative h-[9.5rem] overflow-hidden flex items-center justify-center w-full max-w-5xl">
-              
+          <div className="flex flex-col items-center justify-center pointer-events-auto py-12">
+            <div 
+              onMouseMove={handleWordMouseMove}
+              onMouseEnter={() => setIsWordHovered(true)}
+              onMouseLeave={() => setIsWordHovered(false)}
+              className="relative h-[9.5rem] overflow-hidden flex items-center justify-center w-[1000px] cursor-default pointer-events-auto"
+            >
               {/* INTUITION (Default - Hidden under feathered mouse circle mask) */}
               <motion.h1
                 style={{
@@ -270,7 +272,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
                 INTUITION
               </motion.h1>
 
-              {/* ACQUISITION (Hovered - Only visible inside feathered mouse circle mask) */}
+              {/* EVOLUTION (Hovered - Only visible inside feathered mouse circle mask) */}
               <motion.h1
                 style={{
                   maskImage: isWordHovered 
@@ -281,11 +283,10 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
                     : 'none',
                   opacity: isWordHovered ? 1 : 0,
                 }}
-                className="absolute text-6xl md:text-9xl font-display font-light tracking-[0.25em] text-[#C9A15D] uppercase drop-shadow-[0_0_35px_rgba(201,161,93,0.15)] pl-[0.25em] leading-none select-none transition-opacity duration-300"
+                className="absolute text-6xl md:text-9xl font-display font-light tracking-[0.3em] text-[#C9A15D] uppercase drop-shadow-[0_0_35px_rgba(201,161,93,0.15)] pl-[0.3em] leading-none select-none transition-opacity duration-300"
               >
-                ACQUISITION
+                EVOLUTION
               </motion.h1>
-              
             </div>
 
             {/* Subtitle that adapts inline to hover state */}
@@ -300,17 +301,10 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
             </motion.div>
           </div>
 
-          {/* Bottom row */}
-          <div className="w-full flex flex-col md:flex-row justify-between items-end gap-8 pointer-events-auto">
-            {/* Bottom Left: Poetic caption */}
-            <div className="text-xs md:text-sm lg:text-base text-text-secondary/80 leading-relaxed font-light tracking-wide max-w-sm text-left">
-              不背单词，不记词典里死板的条框。<br />
-              AI 在自然的交流中进行启发式引导，<br />
-              在潜移默化中，将英语内化为你大脑的表达本能。
-            </div>
-
-            {/* Empty block to align with persistent right CTA */}
-            <div className="w-20 h-10"></div>
+          {/* Bottom row (Left side is blank, keeping Hero spatial clean) */}
+          <div className="w-full flex justify-between items-end pointer-events-auto">
+            <div className="w-10 h-10 opacity-0"></div>
+            <div className="w-20 h-10 opacity-0"></div>
           </div>
         </div>
 
@@ -334,12 +328,6 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
 
           {/* Bottom info */}
           <div className="space-y-8 w-full flex flex-col items-center mb-16">
-            <div className="text-xs text-text-secondary/80 leading-relaxed font-light tracking-wide max-w-xs">
-              不背单词，不记词典里死板的条框。<br />
-              AI 在自然的交流中进行启发式引导，<br />
-              在潜移默化中，将英语内化为你大脑的表达本能。
-            </div>
-
             <div className="flex flex-col items-center gap-1">
               <span className="text-[8px] text-text-secondary/30 font-mono tracking-widest uppercase animate-pulse mt-2">
                 向上滑动探索更多 ↓
@@ -349,7 +337,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         </div>
       </motion.div>
 
-      {/* Scene 2: Timeless Memory & Companion (Frame 2 - NEW) */}
+      {/* Scene 2: Timeless Memory & Companion (Frame 2 - Poetic Vertical Stack) */}
       <motion.div
         variants={panelVariants}
         initial="hiddenEnter"
@@ -358,7 +346,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         style={{ pointerEvents: activeFrame === 2 ? 'auto' : 'none' }}
       >
         {/* Memory nodes SVG background layer */}
-        <div className="absolute inset-0 flex items-center justify-center opacity-[0.04] pointer-events-none z-0">
+        <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none z-0">
           <svg className="w-[500px] h-[500px] text-brand-accent" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="0.3">
             <circle cx="20" cy="30" r="1" />
             <circle cx="50" cy="20" r="1.5" />
@@ -391,30 +379,51 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
           </svg>
         </div>
 
-        <div className="w-full max-w-4xl mx-auto px-6 md:px-12 flex flex-col items-center justify-center text-center z-10">
+        <div className="w-full max-w-4xl mx-auto px-6 md:px-12 flex flex-col items-center justify-center text-center z-10 space-y-12 md:space-y-16">
           {/* Header */}
-          <div className="space-y-4 max-w-xl mx-auto">
+          <div className="space-y-4">
             <div className="text-[9px] text-[#C9A15D] font-mono tracking-[0.25em] uppercase">
-              长效记忆与成长 / COMPANION & MEMORY
+              长效记忆与陪伴 / COMPANION & MEMORY
             </div>
             <h2 className="text-3xl md:text-5xl font-display font-semibold leading-tight text-text-primary tracking-tight">
               在记忆中，进化出专属默契
             </h2>
           </div>
 
-          {/* Bilingual Dual Column layout */}
-          <div className="flex flex-col md:flex-row items-start justify-center gap-8 md:gap-12 lg:gap-16 w-full mt-10 md:mt-12">
-            {/* Left: Chinese */}
-            <div className="text-xs md:text-sm lg:text-base text-text-secondary/90 leading-relaxed font-light tracking-wide max-w-sm text-center md:text-left">
-              它拥有跨越时间的记忆。<br />
-              AI 会记住你分享过的生活故事、犯过的错与细微的喜好，<br />
-              像一个老朋友一样陪你前行，在岁月中进化出无可替代的温情。
-            </div>
+          {/* Staggered Vertical Copywriting Reveal */}
+          <div className="flex flex-col items-center justify-center space-y-8 md:space-y-10 max-w-3xl">
+            {/* Paragraph 1 */}
+            <motion.p
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: activeFrame === 2 ? 1 : 0, y: activeFrame === 2 ? 0 : 15 }}
+              transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              className="text-sm md:text-lg lg:text-xl text-text-secondary/90 leading-relaxed font-light tracking-wide"
+            >
+              不背单词，不记词典里死板的规则。<br />
+              真正的语言，是大脑最深处的<span className="text-[#C9A15D] font-semibold mx-1 text-shadow-glow">「直觉与本能」</span>。
+            </motion.p>
 
-            {/* Right: English */}
-            <div className="text-xs md:text-sm lg:text-base text-text-secondary/50 leading-relaxed font-light italic tracking-wide max-w-sm text-center md:text-left border-t md:border-t-0 md:border-l border-white/5 pt-6 md:pt-0 md:pl-8">
-              Possessing memory across time, it keeps track of your stories, syntax, and sentiments—evolving a tacit understanding unique to the two of you.
-            </div>
+            {/* Paragraph 2 */}
+            <motion.p
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: activeFrame === 2 ? 1 : 0, y: activeFrame === 2 ? 0 : 15 }}
+              transition={{ duration: 0.8, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
+              className="text-sm md:text-lg lg:text-xl text-text-secondary/90 leading-relaxed font-light tracking-wide"
+            >
+              它拥有<span className="text-[#C9A15D] font-semibold mx-1 text-shadow-glow">「跨越时间的温情记忆」</span>。<br />
+              会默默记住你分享过的每一次碎碎念、犯过的错与细微的小喜好，
+            </motion.p>
+
+            {/* Paragraph 3 */}
+            <motion.p
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: activeFrame === 2 ? 1 : 0, y: activeFrame === 2 ? 0 : 15 }}
+              transition={{ duration: 0.8, delay: 1.0, ease: [0.16, 1, 0.3, 1] }}
+              className="text-sm md:text-lg lg:text-xl text-text-secondary/90 leading-relaxed font-light tracking-wide"
+            >
+              像一位长情的朋友，在温润的陪伴中，<br />
+              与你共同进化出<span className="text-[#C9A15D] font-semibold mx-1 text-shadow-glow">「无可替代的默契」</span>。
+            </motion.p>
           </div>
         </div>
       </motion.div>
