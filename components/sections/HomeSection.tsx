@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { motion, useScroll, useTransform, useMotionValueEvent } from 'framer-motion';
 import { LiteModeToggle } from '@/components/layout/ClientLayout';
 
 // ----------------------------------------------------------------------
@@ -109,90 +109,87 @@ function SpotlightCard({
 export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   
-  // Section refs for target scroll offsets
-  const s1Ref = useRef<HTMLDivElement>(null);
-  const s2Ref = useRef<HTMLDivElement>(null);
-  const s3Ref = useRef<HTMLDivElement>(null);
-  const s4Ref = useRef<HTMLDivElement>(null);
-
-  // useScroll hook targeted per section within the containerRef scroller
-  const { scrollYProgress: s1Progress } = useScroll({
+  // Single useScroll scroller on the container
+  const { scrollYProgress } = useScroll({
     container: containerRef,
-    target: s1Ref,
-    offset: ["start start", "end end"]
   });
+
+  const [activeSection, setActiveSection] = useState(1);
   
-  const { scrollYProgress: s2Progress } = useScroll({
-    container: containerRef,
-    target: s2Ref,
-    offset: ["start start", "end end"]
-  });
-
-  const { scrollYProgress: s3Progress } = useScroll({
-    container: containerRef,
-    target: s3Ref,
-    offset: ["start start", "end end"]
-  });
-
-  const { scrollYProgress: s4Progress } = useScroll({
-    container: containerRef,
-    target: s4Ref,
-    offset: ["start start", "end end"]
+  // Handle layout index and pointer events dynamically based on scroll timeline
+  useMotionValueEvent(scrollYProgress, "change", (latest) => {
+    if (latest < 0.22) {
+      if (activeSection !== 1) setActiveSection(1);
+    } else if (latest < 0.52) {
+      if (activeSection !== 2) setActiveSection(2);
+    } else if (latest < 0.78) {
+      if (activeSection !== 3) setActiveSection(3);
+    } else {
+      if (activeSection !== 4) setActiveSection(4);
+    }
   });
 
   // ----------------------------------------------------------------------
-  // SCENE 1: Centered Hero Animations (s1Progress: 0 -> 1)
+  // SCENE 1: Centered Hero Screen (0.0 -> 0.22 Timeline)
   // ----------------------------------------------------------------------
-  const s1Opacity = useTransform(s1Progress, [0, 0.7], [1, 0]);
-  const s1Scale = useTransform(s1Progress, [0, 0.7], [1, 0.95]);
-  const s1Y = useTransform(s1Progress, [0, 0.7], [0, -50]);
+  const s1Opacity = useTransform(scrollYProgress, [0.0, 0.18, 0.22], [1, 1, 0]);
+  const s1Scale = useTransform(scrollYProgress, [0.0, 0.22], [1, 0.94]);
+  const s1Y = useTransform(scrollYProgress, [0.0, 0.22], [0, -50]);
 
   // ----------------------------------------------------------------------
-  // SCENE 2: Split Timeline Animations (s2Progress: 0 -> 1)
+  // SCENE 2: Split Flowing Timeline (0.22 -> 0.52 Timeline)
   // ----------------------------------------------------------------------
-  const s2Opacity = useTransform(s2Progress, [0, 0.15, 0.85, 1], [0, 1, 1, 0]);
-  const s2Scale = useTransform(s2Progress, [0, 0.15, 0.85, 1], [0.96, 1, 1, 0.96]);
-  const s2Y = useTransform(s2Progress, [0, 0.15, 0.85, 1], [40, 0, 0, -40]);
-  const s2LineScaleY = useTransform(s2Progress, [0.15, 0.55], [0, 1]);
-  const s2BeforeOpacity = useTransform(s2Progress, [0.2, 0.45], [0, 1]);
-  const s2AfterOpacity = useTransform(s2Progress, [0.45, 0.75], [0, 1]);
+  const s2Opacity = useTransform(scrollYProgress, [0.18, 0.22, 0.48, 0.52], [0, 1, 1, 0]);
+  const s2Scale = useTransform(scrollYProgress, [0.18, 0.22, 0.48, 0.52], [0.96, 1, 1, 0.96]);
+  const s2Y = useTransform(scrollYProgress, [0.18, 0.22, 0.48, 0.52], [40, 0, 0, -40]);
+  const s2LineScaleY = useTransform(scrollYProgress, [0.22, 0.42], [0, 1]);
+  const s2BeforeOpacity = useTransform(scrollYProgress, [0.24, 0.35], [0, 1]);
+  const s2AfterOpacity = useTransform(scrollYProgress, [0.35, 0.46], [0, 1]);
 
   // ----------------------------------------------------------------------
-  // SCENE 3: 2x2 Bento Cards Animations (s3Progress: 0 -> 1)
+  // SCENE 3: 2x2 Bento Features Grid (0.52 -> 0.78 Timeline)
   // ----------------------------------------------------------------------
-  const s3Opacity = useTransform(s3Progress, [0, 0.15, 0.85, 1], [0, 1, 1, 0]);
-  const s3Scale = useTransform(s3Progress, [0, 0.15, 0.85, 1], [0.96, 1, 1, 0.96]);
-  const s3Y = useTransform(s3Progress, [0, 0.15, 0.85, 1], [40, 0, 0, -40]);
-  const s3Card12Opacity = useTransform(s3Progress, [0.15, 0.45], [0, 1]);
-  const s3Card34Opacity = useTransform(s3Progress, [0.45, 0.75], [0, 1]);
-  const s3Card12Y = useTransform(s3Progress, [0.15, 0.45], [50, 0]);
-  const s3Card34Y = useTransform(s3Progress, [0.45, 0.75], [50, 0]);
+  const s3Opacity = useTransform(scrollYProgress, [0.48, 0.52, 0.74, 0.78], [0, 1, 1, 0]);
+  const s3Scale = useTransform(scrollYProgress, [0.48, 0.52, 0.74, 0.78], [0.96, 1, 1, 0.96]);
+  const s3Y = useTransform(scrollYProgress, [0.48, 0.52, 0.74, 0.78], [40, 0, 0, -40]);
+  const s3Card12Opacity = useTransform(scrollYProgress, [0.53, 0.62], [0, 1]);
+  const s3Card34Opacity = useTransform(scrollYProgress, [0.62, 0.71], [0, 1]);
+  const s3Card12Y = useTransform(scrollYProgress, [0.53, 0.62], [50, 0]);
+  const s3Card34Y = useTransform(scrollYProgress, [0.62, 0.71], [50, 0]);
 
   // ----------------------------------------------------------------------
-  // SCENE 4: Clean Typographic Ending Animations (s4Progress: 0 -> 1)
+  // SCENE 4: Clean Typographic Ending (0.78 -> 1.0 Timeline)
   // ----------------------------------------------------------------------
-  const s4Opacity = useTransform(s4Progress, [0, 0.25], [0, 1]);
-  const s4Scale = useTransform(s4Progress, [0, 0.25], [0.96, 1]);
-  const s4Y = useTransform(s4Progress, [0, 0.25], [40, 0]);
-  const s4LoopOpacity = useTransform(s4Progress, [0.2, 0.55], [0, 1]);
-  const s4LoopY = useTransform(s4Progress, [0.2, 0.55], [30, 0]);
-  const s4CtaOpacity = useTransform(s4Progress, [0.55, 0.85], [0, 1]);
-  const s4CtaScale = useTransform(s4Progress, [0.55, 0.85], [0.95, 1]);
+  const s4Opacity = useTransform(scrollYProgress, [0.74, 0.78], [0, 1]);
+  const s4Scale = useTransform(scrollYProgress, [0.74, 0.78], [0.96, 1]);
+  const s4Y = useTransform(scrollYProgress, [0.74, 0.78], [40, 0]);
+  const s4LoopOpacity = useTransform(scrollYProgress, [0.78, 0.88], [0, 1]);
+  const s4LoopY = useTransform(scrollYProgress, [0.78, 0.88], [30, 0]);
+  const s4CtaOpacity = useTransform(scrollYProgress, [0.86, 0.94], [0, 1]);
+  const s4CtaScale = useTransform(scrollYProgress, [0.86, 0.94], [0.95, 1]);
 
   return (
     <div 
       ref={containerRef} 
       className="w-full h-full overflow-y-auto overscroll-contain pb-safe scrollbar-none text-[#FFFFFF] relative"
     >
-      
-      {/* -------------------------------------------------- */}
-      {/* SCENE 1: Centered Hero Screen (0% - 25% Scroll) */}
-      {/* -------------------------------------------------- */}
-      <div ref={s1Ref} className="relative h-[150vh] w-full">
-        <div className="sticky top-0 h-dvh w-full flex items-center justify-center overflow-hidden pointer-events-none">
+      {/* Global Scroll Track Height */}
+      <div className="h-[450vh] relative w-full">
+        
+        {/* Unified Sticky Viewport Layer */}
+        <div className="sticky top-0 h-dvh w-full overflow-hidden pointer-events-none">
+          
+          {/* -------------------------------------------------- */}
+          {/* SCENE 1: Centered Hero Screen (0.0 -> 0.22 Scroll) */}
+          {/* -------------------------------------------------- */}
           <motion.div
-            style={{ opacity: s1Opacity, scale: s1Scale, y: s1Y }}
-            className="w-full max-w-3xl px-6 md:px-12 flex flex-col justify-center items-center text-center pointer-events-auto"
+            style={{ 
+              opacity: s1Opacity, 
+              scale: s1Scale, 
+              y: s1Y,
+              pointerEvents: activeSection === 1 ? 'auto' : 'none'
+            }}
+            className="absolute inset-0 flex flex-col items-center justify-center w-full max-w-7xl mx-auto px-6 md:px-12 text-center"
           >
             {/* Eyebrow badge */}
             <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 bg-brand-accent/10 border border-brand-accent/30 text-[9px] uppercase tracking-[0.2em] font-mono text-brand-accent mb-6">
@@ -200,32 +197,35 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               Learniny Alpha
             </div>
             
-            <h1 className="text-4xl md:text-6xl font-display font-semibold leading-[1.1] text-text-primary tracking-tight">
+            {/* Massive Bold Cinematic Headline */}
+            <h1 className="text-5xl md:text-8xl xl:text-9xl font-display font-extrabold tracking-tighter leading-[1.05] text-text-primary mb-2">
               用真实的对话<br />
               <span className="bg-gradient-to-r from-brand-accent via-brand-accent to-[#00E5FF] bg-clip-text text-transparent italic font-normal drop-shadow-[0_0_15px_rgba(0,255,157,0.2)]">找回英语直觉</span>
             </h1>
 
-            <p className="mt-6 text-sm md:text-base text-text-secondary font-light leading-relaxed max-w-lg mx-auto">
-              不背单词，不记死记硬背的规则。AI 会在自然的交流中进行<span className="text-text-primary font-medium">启发式引导</span>，在潜移默化中将英语内化为你大脑的<span className="text-brand-accent font-medium">表达直觉</span>。
+            {/* Value Proposition copy with strict whitespace-nowrap highlights */}
+            <p className="mt-8 text-base md:text-xl text-text-secondary font-light leading-relaxed max-w-2xl mx-auto">
+              不背单词，不记死记硬背的规则。AI 会在自然的交流中进行<span className="text-text-primary font-semibold whitespace-nowrap">启发式引导</span>，在潜移默化中将英语内化为你大脑的<span className="text-brand-accent font-semibold whitespace-nowrap">表达直觉</span>。
             </p>
 
-            <div className="mt-8">
+            <div className="mt-12">
               <span className="text-[10px] text-text-secondary/30 font-mono tracking-widest uppercase animate-pulse">
                 往下滚动开启学习之旅 ↓
               </span>
             </div>
           </motion.div>
-        </div>
-      </div>
 
-      {/* -------------------------------------------------- */}
-      {/* SCENE 2: Split Flowing Timeline (20% - 50% Scroll) */}
-      {/* -------------------------------------------------- */}
-      <div ref={s2Ref} className="relative h-[200vh] w-full">
-        <div className="sticky top-0 h-dvh w-full flex items-center justify-center overflow-hidden pointer-events-none">
+          {/* -------------------------------------------------- */}
+          {/* SCENE 2: Split Flowing Timeline (0.22 -> 0.52 Scroll) */}
+          {/* -------------------------------------------------- */}
           <motion.div
-            style={{ opacity: s2Opacity, scale: s2Scale, y: s2Y }}
-            className="w-full max-w-5xl px-6 md:px-12 flex flex-col md:flex-row items-center justify-between gap-12 lg:gap-20 pointer-events-auto"
+            style={{ 
+              opacity: s2Opacity, 
+              scale: s2Scale, 
+              y: s2Y,
+              pointerEvents: activeSection === 2 ? 'auto' : 'none'
+            }}
+            className="absolute inset-0 flex flex-col md:flex-row items-center justify-between w-full max-w-5xl mx-auto px-6 md:px-12 gap-12 lg:gap-20"
           >
             {/* Left Header info */}
             <div className="w-full md:w-5/12 text-left space-y-4">
@@ -282,17 +282,18 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
 
             </div>
           </motion.div>
-        </div>
-      </div>
 
-      {/* -------------------------------------------------- */}
-      {/* SCENE 3: 2x2 Bento Features Grid (45% - 75% Scroll) */}
-      {/* -------------------------------------------------- */}
-      <div ref={s3Ref} className="relative h-[250vh] w-full">
-        <div className="sticky top-0 h-dvh w-full flex items-center justify-center overflow-hidden pointer-events-none">
+          {/* -------------------------------------------------- */}
+          {/* SCENE 3: 2x2 Bento Features Grid (0.52 -> 0.78 Scroll) */}
+          {/* -------------------------------------------------- */}
           <motion.div
-            style={{ opacity: s3Opacity, scale: s3Scale, y: s3Y }}
-            className="w-full max-w-5xl px-6 md:px-12 flex flex-col justify-center gap-8 pointer-events-auto h-full"
+            style={{ 
+              opacity: s3Opacity, 
+              scale: s3Scale, 
+              y: s3Y,
+              pointerEvents: activeSection === 3 ? 'auto' : 'none'
+            }}
+            className="absolute inset-0 flex flex-col justify-center w-full max-w-5xl mx-auto px-6 md:px-12 gap-8"
           >
             {/* Header info */}
             <div className="text-left max-w-xl">
@@ -349,23 +350,24 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
                   title="星图可视化成长"
                   conceptColor="#C9A15D"
                 >
-                  将你的核心薄弱项和已掌握句型，在 3D 旋转星系中连点成线展示，学习进度和盲区一目了然。
+                  将你的核心薄弱项 and 已掌握句型，在 3D 旋转星系中连点成线展示，学习进度和盲区一目了然。
                 </SpotlightCard>
               </motion.div>
 
             </div>
           </motion.div>
-        </div>
-      </div>
 
-      {/* -------------------------------------------------- */}
-      {/* SCENE 4: Clean Typographic Ending (70% - 100% Scroll) */}
-      {/* -------------------------------------------------- */}
-      <div ref={s4Ref} className="relative h-[180vh] w-full">
-        <div className="sticky top-0 h-dvh w-full flex items-center justify-center overflow-hidden pointer-events-none">
+          {/* -------------------------------------------------- */}
+          {/* SCENE 4: Clean Typographic Ending (0.78 -> 1.0 Scroll) */}
+          {/* -------------------------------------------------- */}
           <motion.div
-            style={{ opacity: s4Opacity, scale: s4Scale, y: s4Y }}
-            className="w-full max-w-4xl px-6 md:px-12 flex flex-col justify-center items-center text-center pointer-events-auto h-full"
+            style={{ 
+              opacity: s4Opacity, 
+              scale: s4Scale, 
+              y: s4Y,
+              pointerEvents: activeSection === 4 ? 'auto' : 'none'
+            }}
+            className="absolute inset-0 flex flex-col justify-center items-center text-center w-full max-w-4xl mx-auto px-6 md:px-12"
           >
             {/* The Loop Typography */}
             <motion.div 
@@ -388,7 +390,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
             >
               <button
                 onClick={onStartChat}
-                className="group relative inline-flex items-center gap-3.5 text-sm md:text-base font-mono tracking-wider text-brand-accent font-bold cursor-pointer transition-all duration-300"
+                className="group relative inline-flex items-center gap-3.5 text-sm md:text-base font-mono tracking-wider text-brand-accent font-bold cursor-pointer transition-all duration-300 pointer-events-auto"
               >
                 <span>立即开启对话 / START CHAT</span>
                 <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-brand-accent/10 border border-brand-accent/30 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:bg-brand-accent group-hover:text-black">
@@ -398,7 +400,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               </button>
 
               {/* Mobile and Desktop integrated particle warning */}
-              <div className="opacity-50 hover:opacity-100 transition-opacity flex flex-col items-center gap-2">
+              <div className="opacity-50 hover:opacity-100 transition-opacity flex flex-col items-center gap-2 pointer-events-auto">
                 <LiteModeToggle />
                 <span className="text-[9px] text-text-secondary/40 font-mono text-center">
                   提示：手机端为降低能耗，建议不要开启粒子特效
@@ -406,9 +408,9 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               </div>
             </motion.div>
           </motion.div>
+
         </div>
       </div>
-
     </div>
   );
 }
