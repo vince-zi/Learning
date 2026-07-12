@@ -122,6 +122,12 @@ canvas {
   animation: ambient-flow linear infinite;
 }
 
+@media (max-width: 768px) {
+  .animate-ambient-flow {
+    animation: none !important;
+  }
+}
+
 .clip-sheet {
   border-radius: 1.5rem;
 }

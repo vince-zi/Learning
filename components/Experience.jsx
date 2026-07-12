@@ -148,7 +148,7 @@ void main() {
 
 const PracticeParticles = ({ active, pathname = '/', isMobile = false }) => {
     const materialRef = useRef();
-    const particleCount = isMobile ? 3000 : 5000;
+    const particleCount = isMobile ? 1200 : 5000;
     
     const { isThinking, error } = useSessionStore();
     const hasError = !!error;
@@ -606,28 +606,28 @@ export const Experience = ({ pathname, isMobile = false }) => {
                 />
             )}
             
-            {/* Post-Processing Pipeline — optimized for smoothness */}
-            <EffectComposer disableNormalPass multisampling={isMobile ? 0 : 2}>
-                <Bloom 
-                    luminanceThreshold={0.2} 
-                    luminanceSmoothing={0.9} 
-                    intensity={isMobile ? 1.5 : 2.0} 
-                    mipmapBlur 
-                />
-                {!isMobile && (
+            {/* Post-Processing Pipeline — completely bypassed on mobile for energy saving */}
+            {!isMobile && (
+                <EffectComposer disableNormalPass multisampling={2}>
+                    <Bloom 
+                        luminanceThreshold={0.2} 
+                        luminanceSmoothing={0.9} 
+                        intensity={2.0} 
+                        mipmapBlur 
+                    />
                     <ChromaticAberration 
                         offset={[0.002, 0.002]} 
                         radialModulation={false}
                         modulationOffset={0.5}
                     />
-                )}
-                <Noise opacity={0.05} />
-                <Vignette 
-                    eskil={false} 
-                    offset={0.15} 
-                    darkness={0.9} 
-                />
-            </EffectComposer>
+                    <Noise opacity={0.05} />
+                    <Vignette 
+                        eskil={false} 
+                        offset={0.15} 
+                        darkness={0.9} 
+                    />
+                </EffectComposer>
+            )}
         </group>
     );
 };
