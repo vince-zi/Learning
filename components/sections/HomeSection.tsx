@@ -1,38 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useRef } from 'react';
+import { motion, useScroll, useTransform } from 'framer-motion';
 import { LiteModeToggle } from '@/components/layout/ClientLayout';
-
-const fadeUp = {
-  initial: { opacity: 0, y: 35 },
-  whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true, amount: 0.15 },
-  transition: { duration: 1.2, ease: [0.16, 1, 0.3, 1] },
-} as const;
-
-const cascadeItem = {
-  initial: { opacity: 0, y: 25 },
-  whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true },
-  transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] },
-};
-
-const textRevealContainer = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.15,
-      delayChildren: 0.1,
-    }
-  }
-};
-
-const textWord = {
-  hidden: { opacity: 0, y: 35 },
-  show: { opacity: 1, y: 0, transition: { duration: 1.2, ease: [0.16, 1, 0.3, 1] } }
-};
 
 // ----------------------------------------------------------------------
 // Spotlight Card Component (Doppelrand with Interactive Mouse Spotlight)
@@ -100,20 +70,20 @@ function SpotlightCard({
       />
       
       {/* Inner Card Container */}
-      <div className={`relative bg-[#080808]/90 border border-white/[0.01] rounded-[calc(1.8rem-0.375rem)] p-6 space-y-4 h-full flex flex-col justify-between z-10 ${innerClassName}`}>
-        <div className="space-y-4">
+      <div className={`relative bg-[#080808]/90 border border-white/[0.01] rounded-[calc(1.8rem-0.375rem)] p-5 space-y-3 h-full flex flex-col justify-between z-10 ${innerClassName}`}>
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className={`text-[9px] font-mono tracking-widest uppercase transition-colors duration-300 ${isHovered ? 'text-brand-accent' : 'text-text-secondary/40'}`}>
               {number}
             </span>
-            <span className={`text-lg transition-transform duration-500 ${isHovered ? 'scale-125 rotate-6' : ''}`}>
+            <span className={`text-base transition-transform duration-500 ${isHovered ? 'scale-125 rotate-6' : ''}`}>
               {emoji}
             </span>
           </div>
-          <h4 className="text-base font-medium text-text-primary transition-colors duration-300 group-hover:text-brand-accent">
+          <h4 className="text-sm md:text-base font-medium text-text-primary transition-colors duration-300">
             {title}
           </h4>
-          <div className="text-xs text-text-secondary leading-relaxed font-light">
+          <div className="text-[11px] md:text-xs text-text-secondary leading-relaxed font-light">
             {children}
           </div>
         </div>
@@ -134,246 +104,311 @@ function SpotlightCard({
 }
 
 // ----------------------------------------------------------------------
-// Main HomeSection
+// Main HomeSection (Scroll-Linked Frame-by-Frame Stacking Panels)
 // ----------------------------------------------------------------------
 export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
-  const [coordsLoop, setCoordsLoop] = useState({ x: 0, y: 0 });
-  const [isLoopHovered, setIsLoopHovered] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Section refs for target scroll offsets
+  const s1Ref = useRef<HTMLDivElement>(null);
+  const s2Ref = useRef<HTMLDivElement>(null);
+  const s3Ref = useRef<HTMLDivElement>(null);
+  const s4Ref = useRef<HTMLDivElement>(null);
 
-  const handleLoopMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setCoordsLoop({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    });
-  };
+  // useScroll hook targeted per section within the containerRef scroller
+  const { scrollYProgress: s1Progress } = useScroll({
+    container: containerRef,
+    target: s1Ref,
+    offset: ["start start", "end end"]
+  });
+  
+  const { scrollYProgress: s2Progress } = useScroll({
+    container: containerRef,
+    target: s2Ref,
+    offset: ["start start", "end end"]
+  });
+
+  const { scrollYProgress: s3Progress } = useScroll({
+    container: containerRef,
+    target: s3Ref,
+    offset: ["start start", "end end"]
+  });
+
+  const { scrollYProgress: s4Progress } = useScroll({
+    container: containerRef,
+    target: s4Ref,
+    offset: ["start start", "end end"]
+  });
+
+  // ----------------------------------------------------------------------
+  // SCENE 1: Centered Hero Animations (s1Progress: 0 -> 1)
+  // ----------------------------------------------------------------------
+  const s1Opacity = useTransform(s1Progress, [0, 0.7], [1, 0]);
+  const s1Scale = useTransform(s1Progress, [0, 0.7], [1, 0.95]);
+  const s1Y = useTransform(s1Progress, [0, 0.7], [0, -50]);
+
+  // ----------------------------------------------------------------------
+  // SCENE 2: Split Timeline Animations (s2Progress: 0 -> 1)
+  // ----------------------------------------------------------------------
+  const s2Opacity = useTransform(s2Progress, [0, 0.15, 0.85, 1], [0, 1, 1, 0]);
+  const s2Scale = useTransform(s2Progress, [0, 0.15, 0.85, 1], [0.96, 1, 1, 0.96]);
+  const s2Y = useTransform(s2Progress, [0, 0.15, 0.85, 1], [40, 0, 0, -40]);
+  const s2LineScaleY = useTransform(s2Progress, [0.15, 0.55], [0, 1]);
+  const s2BeforeOpacity = useTransform(s2Progress, [0.2, 0.45], [0, 1]);
+  const s2AfterOpacity = useTransform(s2Progress, [0.45, 0.75], [0, 1]);
+
+  // ----------------------------------------------------------------------
+  // SCENE 3: 2x2 Bento Cards Animations (s3Progress: 0 -> 1)
+  // ----------------------------------------------------------------------
+  const s3Opacity = useTransform(s3Progress, [0, 0.15, 0.85, 1], [0, 1, 1, 0]);
+  const s3Scale = useTransform(s3Progress, [0, 0.15, 0.85, 1], [0.96, 1, 1, 0.96]);
+  const s3Y = useTransform(s3Progress, [0, 0.15, 0.85, 1], [40, 0, 0, -40]);
+  const s3Card12Opacity = useTransform(s3Progress, [0.15, 0.45], [0, 1]);
+  const s3Card34Opacity = useTransform(s3Progress, [0.45, 0.75], [0, 1]);
+  const s3Card12Y = useTransform(s3Progress, [0.15, 0.45], [50, 0]);
+  const s3Card34Y = useTransform(s3Progress, [0.45, 0.75], [50, 0]);
+
+  // ----------------------------------------------------------------------
+  // SCENE 4: Clean Typographic Ending Animations (s4Progress: 0 -> 1)
+  // ----------------------------------------------------------------------
+  const s4Opacity = useTransform(s4Progress, [0, 0.25], [0, 1]);
+  const s4Scale = useTransform(s4Progress, [0, 0.25], [0.96, 1]);
+  const s4Y = useTransform(s4Progress, [0, 0.25], [40, 0]);
+  const s4LoopOpacity = useTransform(s4Progress, [0.2, 0.55], [0, 1]);
+  const s4LoopY = useTransform(s4Progress, [0.2, 0.55], [30, 0]);
+  const s4CtaOpacity = useTransform(s4Progress, [0.55, 0.85], [0, 1]);
+  const s4CtaScale = useTransform(s4Progress, [0.55, 0.85], [0.95, 1]);
 
   return (
-    <div className="w-full h-full overflow-y-auto overscroll-contain pb-safe scrollbar-none text-[#FFFFFF]">
-      <div className="max-w-7xl mx-auto px-6 md:px-12 py-16 md:py-32 flex flex-col md:flex-row items-start gap-16 lg:gap-24 pointer-events-auto">
-        
-        {/* 左侧：固定文案与行动导向区 */}
-        <div className="w-full md:w-5/12 md:sticky md:top-24 flex flex-col items-start text-left">
-          {/* Eyebrow badge */}
+    <div 
+      ref={containerRef} 
+      className="w-full h-full overflow-y-auto overscroll-contain pb-safe scrollbar-none text-[#FFFFFF] relative"
+    >
+      
+      {/* -------------------------------------------------- */}
+      {/* SCENE 1: Centered Hero Screen (0% - 25% Scroll) */}
+      {/* -------------------------------------------------- */}
+      <div ref={s1Ref} className="relative h-[150vh] w-full">
+        <div className="sticky top-0 h-dvh w-full flex items-center justify-center overflow-hidden pointer-events-none">
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1.0, ease: [0.16, 1, 0.3, 1] }}
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 bg-brand-accent/10 border border-brand-accent/30 text-[9px] uppercase tracking-[0.2em] font-mono text-brand-accent mb-6"
+            style={{ opacity: s1Opacity, scale: s1Scale, y: s1Y }}
+            className="w-full max-w-3xl px-6 md:px-12 flex flex-col justify-center items-center text-center pointer-events-auto"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />
-            Learniny Alpha
-          </motion.div>
-          
-          {/* Kinetic Text Reveal Header */}
-          <motion.h1
-            variants={textRevealContainer}
-            initial="hidden"
-            animate="show"
-            className="text-4xl lg:text-6xl font-display font-semibold leading-[1.1] text-text-primary tracking-tight"
-          >
-            <span className="block overflow-hidden py-0.5">
-              <motion.span variants={textWord} className="block">用真实的对话</motion.span>
-            </span>
-            <span className="block overflow-hidden py-0.5 bg-gradient-to-r from-brand-accent via-brand-accent to-[#00E5FF] bg-clip-text text-transparent italic font-normal drop-shadow-[0_0_15px_rgba(0,255,157,0.2)]">
-              <motion.span variants={textWord} className="block">找回英语直觉</motion.span>
-            </span>
-          </motion.h1>
+            {/* Eyebrow badge */}
+            <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 bg-brand-accent/10 border border-brand-accent/30 text-[9px] uppercase tracking-[0.2em] font-mono text-brand-accent mb-6">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />
+              Learniny Alpha
+            </div>
+            
+            <h1 className="text-4xl md:text-6xl font-display font-semibold leading-[1.1] text-text-primary tracking-tight">
+              用真实的对话<br />
+              <span className="bg-gradient-to-r from-brand-accent via-brand-accent to-[#00E5FF] bg-clip-text text-transparent italic font-normal drop-shadow-[0_0_15px_rgba(0,255,157,0.2)]">找回英语直觉</span>
+            </h1>
 
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1.2, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
-            className="mt-6 text-sm lg:text-base text-text-secondary font-light leading-relaxed max-w-md"
-          >
-            不背单词，不记死记硬背的规则。AI 会在自然的交流中进行<span className="text-text-primary font-medium">启发式引导</span>，在潜移默化中将英语内化为你大脑的<span className="text-brand-accent font-medium">表达直觉</span>。
-          </motion.p>
+            <p className="mt-6 text-sm md:text-base text-text-secondary font-light leading-relaxed max-w-lg mx-auto">
+              不背单词，不记死记硬背的规则。AI 会在自然的交流中进行<span className="text-text-primary font-medium">启发式引导</span>，在潜移默化中将英语内化为你大脑的<span className="text-brand-accent font-medium">表达直觉</span>。
+            </p>
 
-          {/* Minimalist Action Link with custom circular arrow transition */}
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1.2, delay: 0.55, ease: [0.16, 1, 0.3, 1] }}
-            className="mt-8 lg:mt-10"
-          >
-            <button
-              onClick={onStartChat}
-              className="group relative inline-flex items-center gap-3 text-sm font-mono tracking-wider text-brand-accent font-bold cursor-pointer transition-all duration-300"
-            >
-              <span>立即开启对话 / START CHAT</span>
-              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-brand-accent/10 border border-brand-accent/30 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:bg-brand-accent group-hover:text-black">
-                <span className="text-xs transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-0.5 group-hover:scale-110">→</span>
+            <div className="mt-8">
+              <span className="text-[10px] text-text-secondary/30 font-mono tracking-widest uppercase animate-pulse">
+                往下滚动开启学习之旅 ↓
               </span>
-              <span className="absolute bottom-[-6px] left-0 w-0 h-[1.5px] bg-brand-accent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:w-full" />
-            </button>
-          </motion.div>
-
-          {/* Particle Toggle under left panel */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.6 }}
-            transition={{ duration: 1.5, delay: 0.7 }}
-            className="mt-20 hidden md:flex flex-col items-start gap-1.5 hover:opacity-100 transition-opacity"
-          >
-            <LiteModeToggle />
-            <span className="text-[9px] text-text-secondary/40 font-mono">提示：手机端为降低能耗，建议不要开启粒子特效</span>
+            </div>
           </motion.div>
         </div>
-
-        {/* 右侧：滚动详情流 */}
-        <div className="w-full md:w-7/12 flex flex-col gap-20 lg:gap-28">
-          
-          {/* 时轴对比区 */}
-          <motion.div {...fadeUp} className="flex flex-col text-left">
-            <div className="text-[10px] text-text-secondary/50 font-mono uppercase tracking-[0.2em] mb-8">时轴对比 / PROGRESSION</div>
-            <div className="relative pl-8 border-l border-white/5 space-y-12">
-              
-              {/* Flowing neon timeline line */}
-              <div className="absolute left-[-1px] top-0 bottom-0 w-[2px] bg-white/5 overflow-hidden">
-                <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-transparent via-brand-accent/60 to-transparent animate-flow-line" />
-              </div>
-              
-              {/* Before Node */}
-              <motion.div {...cascadeItem} className="relative group">
-                {/* Node dot */}
-                <div className="absolute left-[-37px] top-1.5 w-4 h-4 rounded-full border border-white/10 bg-app-bg flex items-center justify-center transition-all duration-500 group-hover:border-white/30 z-10">
-                  <div className="w-1.5 h-1.5 rounded-full bg-white/20" />
-                </div>
-                <div className="text-[9px] font-mono uppercase tracking-[0.15em] text-text-secondary/40 mb-1.5">使用之前 / TRADITIONAL LEARNING</div>
-                <h3 className="text-base md:text-lg font-medium text-text-secondary leading-snug mb-2">背了很多单词和语法规则，一开口还是不敢说、说不顺</h3>
-                <p className="text-xs text-text-secondary/60 leading-relaxed font-light">
-                  传统学习侧重于生硬记忆标准答案。在实际沟通中需要在脑海中检索词库并套用语法结构，造成严重的思考滞后与表达卡顿。
-                </p>
-              </motion.div>
-
-              {/* After Node */}
-              <motion.div {...cascadeItem} className="relative group">
-                {/* Node dot with glow */}
-                <div className="absolute left-[-37px] top-1.5 w-4 h-4 rounded-full border border-brand-accent/40 bg-app-bg flex items-center justify-center shadow-[0_0_10px_rgba(0,255,157,0.25)] transition-all duration-500 group-hover:border-brand-accent z-10">
-                  <div className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />
-                </div>
-                <div className="text-[9px] font-mono uppercase tracking-[0.15em] text-brand-accent/60 mb-1.5">使用之后 / INTUITIVE ACQUISITION</div>
-                <h3 className="text-base md:text-lg font-medium text-text-primary leading-snug mb-2">不用刻意想语法，英语自然脱口而出</h3>
-                <p className="text-xs text-text-secondary/80 leading-relaxed font-light">
-                  基于二语习得理念，通过启发式对话在真实上下文中主动探索。犯错会被即时诊断并引导改写，在不断的语境复用中固化为直接的表达直觉。
-                </p>
-              </motion.div>
-            </div>
-          </motion.div>
-
-          {/* 项目介绍与卡片网格 */}
-          <motion.div {...fadeUp} className="text-left space-y-8">
-            <div>
-              <div className="text-[10px] text-text-secondary/50 font-mono uppercase tracking-[0.2em] mb-2">项目介绍 / PHILOSOPHY</div>
-              <h2 className="text-2xl md:text-3xl font-display font-semibold text-text-primary leading-tight">
-                不是背答案，而是把“会说”练出来
-              </h2>
-              <p className="mt-4 text-xs md:text-sm text-text-secondary leading-relaxed font-light max-w-xl">
-                Learniny 的核心是：让你在真实表达里暴露问题、马上纠正、再带回到新的语境里复用。你练到的不是孤立的模板，而是一套可以自如迁移的口语直觉。
-              </p>
-            </div>
-            
-            {/* Features Double-Bezel Card Grid with Mouse Position Follower Spotlight */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              
-              {/* Practice */}
-              <SpotlightCard
-                number="01 / PRACTICE"
-                emoji="💬"
-                title="像聊天一样开口"
-                conceptColor="#00E5FF"
-              >
-                你说一句，AI 回一句，并用启发式问题引导你深入对话。重点是“持续输出”，在真实心流中训练表达。
-              </SpotlightCard>
-
-              {/* Feedback */}
-              <SpotlightCard
-                number="02 / FEEDBACK"
-                emoji="⚡"
-                title="纠错只抓关键点"
-                conceptColor="#00FF9D"
-              >
-                拒绝繁琐语法教条：只挑出影响交流的语法盲区或中式英语，提供原地替换的极简自然口语表达。
-              </SpotlightCard>
-
-              {/* Review */}
-              <SpotlightCard
-                number="03 / REVIEW"
-                emoji="🔄"
-                title="错题本两步强化"
-                conceptColor="#FFFFFF"
-              >
-                先把偏差句改写正确，再在系统随机模拟的全新生活场景中输出该表达。彻底打通遗忘曲线。
-              </SpotlightCard>
-
-              {/* Discovery */}
-              <SpotlightCard
-                number="04 / DISCOVERY"
-                emoji="🌌"
-                title="星图可视化成长"
-                conceptColor="#C9A15D"
-              >
-                将你的核心薄弱项和已掌握句型，在 3D 旋转星系中连点成线展示，学习进度和盲区一目了然。
-              </SpotlightCard>
-
-            </div>
-          </motion.div>
-
-          {/* THE LOOP 聚光灯大卡片 */}
-          <motion.div 
-            {...fadeUp}
-            onMouseMove={handleLoopMouseMove}
-            onMouseEnter={() => setIsLoopHovered(true)}
-            onMouseLeave={() => setIsLoopHovered(false)}
-            className="relative bg-white/[0.01] border border-white/[0.03] rounded-[1.8rem] p-1.5 shadow-sm overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] hover:translate-y-[-4px] text-left"
-            style={{
-              ...({
-                '--mouse-x': `${coordsLoop.x}px`,
-                '--mouse-y': `${coordsLoop.y}px`,
-              } as React.CSSProperties),
-            }}
-          >
-            {/* Background Spotlight layer */}
-            <div 
-              className="absolute inset-0 pointer-events-none transition-opacity duration-500 z-0"
-              style={{
-                opacity: isLoopHovered ? 1 : 0,
-                background: `radial-gradient(250px circle at var(--mouse-x) var(--mouse-y), rgba(0, 229, 255, 0.06), transparent 80%)`,
-              }}
-            />
-            
-            {/* Border Spotlight highlight layer */}
-            <div 
-              className="absolute inset-0 pointer-events-none transition-opacity duration-500 rounded-[1.8rem] border border-brand-accent/20 z-0"
-              style={{
-                opacity: isLoopHovered ? 1 : 0,
-                maskImage: `radial-gradient(250px circle at var(--mouse-x) var(--mouse-y), black, transparent)`,
-                WebkitMaskImage: `radial-gradient(250px circle at var(--mouse-x) var(--mouse-y), black, transparent)`,
-              }}
-            />
-
-            <div className="relative bg-[#050505]/95 border border-white/[0.015] rounded-[calc(1.8rem-0.375rem)] p-6 space-y-3 z-10">
-              <div className={`text-[9px] font-mono tracking-widest uppercase transition-colors duration-300 ${isLoopHovered ? 'text-brand-accent' : 'text-text-secondary/40'}`}>
-                成长闭环 / THE CYCLE
-              </div>
-              <h3 className="text-base md:text-lg font-medium text-text-primary">
-                练习 → 自动捕捉错误 → 温习强化 → 带回对话继续用
-              </h3>
-              <p className="text-xs text-text-secondary leading-relaxed font-light">
-                Learniny 绝非简单的背题库，而是一套自我进化学习的精密闭环。您说的每一句话都是精心画像的材料，在“对话-感知-矫正-再次对话”的闭环中周而复始，英语直觉螺旋上升。
-              </p>
-            </div>
-          </motion.div>
-
-          {/* Particle Toggle for Mobile only */}
-          <div className="mt-4 flex md:hidden flex-col items-center gap-1.5 opacity-60">
-            <LiteModeToggle />
-            <span className="text-[9px] text-text-secondary/40 font-mono text-center">提示：手机端为降低能耗，建议不要开启粒子特效</span>
-          </div>
-
-        </div>
-
       </div>
+
+      {/* -------------------------------------------------- */}
+      {/* SCENE 2: Split Flowing Timeline (20% - 50% Scroll) */}
+      {/* -------------------------------------------------- */}
+      <div ref={s2Ref} className="relative h-[200vh] w-full">
+        <div className="sticky top-0 h-dvh w-full flex items-center justify-center overflow-hidden pointer-events-none">
+          <motion.div
+            style={{ opacity: s2Opacity, scale: s2Scale, y: s2Y }}
+            className="w-full max-w-5xl px-6 md:px-12 flex flex-col md:flex-row items-center justify-between gap-12 lg:gap-20 pointer-events-auto"
+          >
+            {/* Left Header info */}
+            <div className="w-full md:w-5/12 text-left space-y-4">
+              <div className="text-[9px] text-[#00E5FF] font-mono tracking-[0.25em] uppercase">转变过程 / THE TRANSITION</div>
+              <h2 className="text-2xl md:text-4xl font-display font-semibold text-text-primary leading-tight">
+                跳过语法转换器<br />
+                直接以直觉表达
+              </h2>
+              <p className="text-xs md:text-sm text-text-secondary leading-relaxed font-light">
+                英语不应该是数学公式。我们摒弃在大脑中“词汇组合+时态校验”的传统滞后思维模式，用最自然的方式把语言磨练成本能。
+              </p>
+            </div>
+
+            {/* Right Flowing Timeline */}
+            <div className="w-full md:w-6/12 relative pl-8 border-l border-white/5 py-4 text-left">
+              {/* Dynamic scroll-linked neon line path */}
+              <div className="absolute left-[-1px] top-0 bottom-0 w-[2px] bg-white/5 overflow-hidden">
+                <motion.div 
+                  style={{ scaleY: s2LineScaleY }} 
+                  className="w-full h-full bg-gradient-to-b from-brand-accent/50 via-[#00E5FF]/30 to-transparent origin-top"
+                />
+              </div>
+
+              {/* Flowing Pulse gradient */}
+              <div className="absolute left-[-1px] top-0 bottom-0 w-[2px] bg-transparent overflow-hidden pointer-events-none">
+                <div className="absolute top-0 left-0 right-0 h-24 bg-gradient-to-b from-transparent via-brand-accent to-transparent animate-flow-line" />
+              </div>
+              
+              <div className="space-y-12">
+                {/* Node Before */}
+                <motion.div style={{ opacity: s2BeforeOpacity }} className="relative group">
+                  <div className="absolute left-[-37px] top-1.5 w-4 h-4 rounded-full border border-white/10 bg-app-bg flex items-center justify-center">
+                    <div className="w-1.5 h-1.5 rounded-full bg-white/20" />
+                  </div>
+                  <div className="text-[9px] font-mono uppercase tracking-widest text-text-secondary/40 mb-1">使用之前 / TRADITIONAL</div>
+                  <h3 className="text-sm md:text-base font-medium text-text-secondary mb-1">生硬死记单词语法，一开口卡顿难受</h3>
+                  <p className="text-[11px] text-text-secondary/60 leading-relaxed font-light">
+                    试图在脑海中对每一个单词和结构进行规则映射，越想对越不敢说，彻底失去口语流利度。
+                  </p>
+                </motion.div>
+
+                {/* Node After */}
+                <motion.div style={{ opacity: s2AfterOpacity }} className="relative group">
+                  <div className="absolute left-[-37px] top-1.5 w-4 h-4 rounded-full border border-brand-accent/40 bg-app-bg flex items-center justify-center shadow-[0_0_10px_rgba(0,255,157,0.25)]">
+                    <div className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />
+                  </div>
+                  <div className="text-[9px] font-mono uppercase tracking-widest text-brand-accent/60 mb-1">使用之后 / INTUITIVE</div>
+                  <h3 className="text-sm md:text-base font-medium text-text-primary mb-1">英语在大脑中内化，脱口即可表达</h3>
+                  <p className="text-[11px] text-text-secondary/80 leading-relaxed font-light">
+                    AI 引导在错误场景中自我纠偏，形成肌肉记忆。无需二次语法校验，说英语就像说话一样自然。
+                  </p>
+                </motion.div>
+              </div>
+
+            </div>
+          </motion.div>
+        </div>
+      </div>
+
+      {/* -------------------------------------------------- */}
+      {/* SCENE 3: 2x2 Bento Features Grid (45% - 75% Scroll) */}
+      {/* -------------------------------------------------- */}
+      <div ref={s3Ref} className="relative h-[250vh] w-full">
+        <div className="sticky top-0 h-dvh w-full flex items-center justify-center overflow-hidden pointer-events-none">
+          <motion.div
+            style={{ opacity: s3Opacity, scale: s3Scale, y: s3Y }}
+            className="w-full max-w-5xl px-6 md:px-12 flex flex-col justify-center gap-8 pointer-events-auto h-full"
+          >
+            {/* Header info */}
+            <div className="text-left max-w-xl">
+              <div className="text-[9px] text-[#00FF9D] font-mono tracking-[0.25em] uppercase mb-2">学习矩阵 / METHODOLOGY</div>
+              <h2 className="text-2xl md:text-3xl font-display font-semibold text-text-primary leading-tight">
+                系统化打造你的二语习得循环
+              </h2>
+            </div>
+
+            {/* Bento Cards Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+              
+              {/* Card 1 */}
+              <motion.div style={{ opacity: s3Card12Opacity, y: s3Card12Y }}>
+                <SpotlightCard
+                  number="01 / PRACTICE"
+                  emoji="💬"
+                  title="像聊天一样开口"
+                  conceptColor="#00E5FF"
+                >
+                  你说一句，AI 回一句，并用启发式问题引导你深入对话。重点是“持续输出”，在真实心流中训练表达。
+                </SpotlightCard>
+              </motion.div>
+
+              {/* Card 2 */}
+              <motion.div style={{ opacity: s3Card12Opacity, y: s3Card12Y }}>
+                <SpotlightCard
+                  number="02 / FEEDBACK"
+                  emoji="⚡"
+                  title="纠错只抓关键点"
+                  conceptColor="#00FF9D"
+                >
+                  拒绝繁琐语法教条：只挑出影响交流的语法盲区或中式英语，提供原地替换的极简自然口语表达。
+                </SpotlightCard>
+              </motion.div>
+
+              {/* Card 3 */}
+              <motion.div style={{ opacity: s3Card34Opacity, y: s3Card34Y }}>
+                <SpotlightCard
+                  number="03 / REVIEW"
+                  emoji="🔄"
+                  title="错题本两步强化"
+                  conceptColor="#FFFFFF"
+                >
+                  先把偏差句改写正确，再在系统随机模拟的全新生活场景中输出该表达。彻底打通遗忘曲线。
+                </SpotlightCard>
+              </motion.div>
+
+              {/* Card 4 */}
+              <motion.div style={{ opacity: s3Card34Opacity, y: s3Card34Y }}>
+                <SpotlightCard
+                  number="04 / DISCOVERY"
+                  emoji="🌌"
+                  title="星图可视化成长"
+                  conceptColor="#C9A15D"
+                >
+                  将你的核心薄弱项和已掌握句型，在 3D 旋转星系中连点成线展示，学习进度和盲区一目了然。
+                </SpotlightCard>
+              </motion.div>
+
+            </div>
+          </motion.div>
+        </div>
+      </div>
+
+      {/* -------------------------------------------------- */}
+      {/* SCENE 4: Clean Typographic Ending (70% - 100% Scroll) */}
+      {/* -------------------------------------------------- */}
+      <div ref={s4Ref} className="relative h-[180vh] w-full">
+        <div className="sticky top-0 h-dvh w-full flex items-center justify-center overflow-hidden pointer-events-none">
+          <motion.div
+            style={{ opacity: s4Opacity, scale: s4Scale, y: s4Y }}
+            className="w-full max-w-4xl px-6 md:px-12 flex flex-col justify-center items-center text-center pointer-events-auto h-full"
+          >
+            {/* The Loop Typography */}
+            <motion.div 
+              style={{ opacity: s4LoopOpacity, y: s4LoopY }}
+              className="space-y-6 max-w-3xl"
+            >
+              <div className="text-[9px] text-[#C9A15D] font-mono tracking-[0.25em] uppercase">成长闭环 / THE CORE CYCLE</div>
+              <h2 className="text-3xl md:text-5xl font-display font-semibold leading-tight text-text-primary tracking-tight">
+                练习 → 自动捕捉错误 → 温习强化 → 带回对话继续用
+              </h2>
+              <p className="text-xs md:text-sm text-text-secondary leading-relaxed font-light max-w-2xl mx-auto">
+                Learniny 不是简单的刷题册，而是一套自我进化学习的精密闭环。您说出的每一句话都是画像的养料，在“对话-诊断-纠错-复用”的闭环中周而复始，英语直觉螺旋上升。
+              </p>
+            </motion.div>
+
+            {/* Ending CTA Link Button */}
+            <motion.div 
+              style={{ opacity: s4CtaOpacity, scale: s4CtaScale }}
+              className="mt-12 lg:mt-16 flex flex-col items-center gap-6"
+            >
+              <button
+                onClick={onStartChat}
+                className="group relative inline-flex items-center gap-3.5 text-sm md:text-base font-mono tracking-wider text-brand-accent font-bold cursor-pointer transition-all duration-300"
+              >
+                <span>立即开启对话 / START CHAT</span>
+                <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-brand-accent/10 border border-brand-accent/30 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:bg-brand-accent group-hover:text-black">
+                  <span className="text-sm transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-0.5 group-hover:scale-110">→</span>
+                </span>
+                <span className="absolute bottom-[-6px] left-0 w-0 h-[1.5px] bg-brand-accent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:w-full" />
+              </button>
+
+              {/* Mobile and Desktop integrated particle warning */}
+              <div className="opacity-50 hover:opacity-100 transition-opacity flex flex-col items-center gap-2">
+                <LiteModeToggle />
+                <span className="text-[9px] text-text-secondary/40 font-mono text-center">
+                  提示：手机端为降低能耗，建议不要开启粒子特效
+                </span>
+              </div>
+            </motion.div>
+          </motion.div>
+        </div>
+      </div>
+
     </div>
   );
 }
