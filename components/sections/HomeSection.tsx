@@ -173,10 +173,10 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
             className="text-4xl lg:text-6xl font-display font-semibold leading-[1.1] text-text-primary tracking-tight"
           >
             <span className="block overflow-hidden py-0.5">
-              <motion.span variants={textWord} className="block">用对话练英语</motion.span>
+              <motion.span variants={textWord} className="block">用真实的对话</motion.span>
             </span>
             <span className="block overflow-hidden py-0.5 bg-gradient-to-r from-brand-accent via-brand-accent to-[#00E5FF] bg-clip-text text-transparent italic font-normal drop-shadow-[0_0_15px_rgba(0,255,157,0.2)]">
-              <motion.span variants={textWord} className="block">越说越自信</motion.span>
+              <motion.span variants={textWord} className="block">找回英语直觉</motion.span>
             </span>
           </motion.h1>
 
@@ -186,7 +186,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
             transition={{ duration: 1.2, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
             className="mt-6 text-sm lg:text-base text-text-secondary font-light leading-relaxed max-w-md"
           >
-            AI 不给标准答案，而是用<span className="text-brand-hint font-medium">启发式提问</span>引导你自己发现语法规律。像和朋友聊天一样，在真实语境中把英语磨练成你的<span className="text-brand-accent font-medium">第二直觉</span>。
+            不背单词，不记死记硬背的规则。AI 会在自然的交流中进行<span className="text-text-primary font-medium">启发式引导</span>，在潜移默化中将英语内化为你大脑的<span className="text-brand-accent font-medium">表达直觉</span>。
           </motion.p>
 
           {/* Minimalist Action Link with custom circular arrow transition */}
