@@ -109,6 +109,7 @@ function SpotlightCard({
 export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
   const [activeFrame, setActiveFrame] = useState(1);
   const [isWordHovered, setIsWordHovered] = useState(false);
+  const [mousePos, setMousePos] = useState({ x: -999, y: -999 });
   const lastTransitionTime = useRef(0);
   const touchStartY = useRef(0);
 
@@ -145,6 +146,15 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         transitionTo(activeFrame - 1);
       }
     }
+  };
+
+  // Capture mouse move relative to central text block for the magic mask
+  const handleWordMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setMousePos({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
   };
 
   // Framer Motion panel exit/enter transitions
@@ -211,35 +221,42 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
             </div>
           </div>
 
-          {/* Center concept word with rolling hover morph */}
+          {/* Center concept word with interactive mouse mask window */}
           <div 
+            onMouseMove={handleWordMouseMove}
             onMouseEnter={() => setIsWordHovered(true)}
             onMouseLeave={() => setIsWordHovered(false)}
             className="flex flex-col items-center justify-center pointer-events-auto py-12 cursor-default"
           >
-            <div className="relative h-[9.5rem] overflow-hidden flex items-center justify-center">
+            <div className="relative h-[9.5rem] overflow-hidden flex items-center justify-center w-full max-w-5xl">
               
-              {/* INTUITION (Default) */}
+              {/* INTUITION (Default - Hidden under feathered mouse circle mask) */}
               <motion.h1
-                animate={{
-                  opacity: isWordHovered ? 0 : 1,
-                  y: isWordHovered ? -40 : 0,
+                style={{
+                  maskImage: isWordHovered 
+                    ? `radial-gradient(circle 42px at ${mousePos.x}px ${mousePos.y}px, transparent 0%, black 100%)` 
+                    : 'none',
+                  WebkitMaskImage: isWordHovered 
+                    ? `radial-gradient(circle 42px at ${mousePos.x}px ${mousePos.y}px, transparent 0%, black 100%)` 
+                    : 'none',
                 }}
-                transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
-                className="text-6xl md:text-9xl font-display font-light tracking-[0.3em] text-white/95 uppercase drop-shadow-[0_0_35px_rgba(255,255,255,0.04)] pl-[0.3em] leading-none select-none"
+                className="text-6xl md:text-9xl font-display font-light tracking-[0.3em] text-white/95 uppercase drop-shadow-[0_0_35px_rgba(255,255,255,0.04)] pl-[0.3em] leading-none select-none transition-all duration-300"
               >
                 INTUITION
               </motion.h1>
 
-              {/* ACQUISITION (Hovered) */}
+              {/* ACQUISITION (Hovered - Only visible inside feathered mouse circle mask) */}
               <motion.h1
-                initial={{ opacity: 0, y: 40 }}
-                animate={{
+                style={{
+                  maskImage: isWordHovered 
+                    ? `radial-gradient(circle 42px at ${mousePos.x}px ${mousePos.y}px, black 0%, transparent 100%)` 
+                    : 'none',
+                  WebkitMaskImage: isWordHovered 
+                    ? `radial-gradient(circle 42px at ${mousePos.x}px ${mousePos.y}px, black 0%, transparent 100%)` 
+                    : 'none',
                   opacity: isWordHovered ? 1 : 0,
-                  y: isWordHovered ? 0 : 40,
                 }}
-                transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute text-6xl md:text-9xl font-display font-light tracking-[0.25em] text-[#C9A15D] uppercase drop-shadow-[0_0_35px_rgba(201,161,93,0.15)] pl-[0.25em] leading-none select-none"
+                className="absolute text-6xl md:text-9xl font-display font-light tracking-[0.25em] text-[#C9A15D] uppercase drop-shadow-[0_0_35px_rgba(201,161,93,0.15)] pl-[0.25em] leading-none select-none transition-opacity duration-300"
               >
                 ACQUISITION
               </motion.h1>
