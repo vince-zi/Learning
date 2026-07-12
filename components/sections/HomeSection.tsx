@@ -108,6 +108,7 @@ function SpotlightCard({
 // ----------------------------------------------------------------------
 export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
   const [activeFrame, setActiveFrame] = useState(1);
+  const [isWordHovered, setIsWordHovered] = useState(false);
   const lastTransitionTime = useRef(0);
   const touchStartY = useRef(0);
 
@@ -210,14 +211,51 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
             </div>
           </div>
 
-          {/* Center concept word */}
-          <div className="flex flex-col items-center justify-center pointer-events-auto py-12">
-            <h1 className="text-7xl md:text-9xl font-display font-light tracking-[0.3em] text-white/95 uppercase drop-shadow-[0_0_35px_rgba(255,255,255,0.04)] pl-[0.3em] leading-none">
-              INTUITION
-            </h1>
-            <div className="text-xs md:text-sm lg:text-base font-mono tracking-[0.4em] text-text-secondary/80 uppercase mt-6 pl-[0.4em]">
-              在对话中重建英语直觉
+          {/* Center concept word with rolling hover morph */}
+          <div 
+            onMouseEnter={() => setIsWordHovered(true)}
+            onMouseLeave={() => setIsWordHovered(false)}
+            className="flex flex-col items-center justify-center pointer-events-auto py-12 cursor-default"
+          >
+            <div className="relative h-[9.5rem] overflow-hidden flex items-center justify-center">
+              
+              {/* INTUITION (Default) */}
+              <motion.h1
+                animate={{
+                  opacity: isWordHovered ? 0 : 1,
+                  y: isWordHovered ? -40 : 0,
+                }}
+                transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
+                className="text-6xl md:text-9xl font-display font-light tracking-[0.3em] text-white/95 uppercase drop-shadow-[0_0_35px_rgba(255,255,255,0.04)] pl-[0.3em] leading-none select-none"
+              >
+                INTUITION
+              </motion.h1>
+
+              {/* ACQUISITION (Hovered) */}
+              <motion.h1
+                initial={{ opacity: 0, y: 40 }}
+                animate={{
+                  opacity: isWordHovered ? 1 : 0,
+                  y: isWordHovered ? 0 : 40,
+                }}
+                transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
+                className="absolute text-6xl md:text-9xl font-display font-light tracking-[0.25em] text-[#C9A15D] uppercase drop-shadow-[0_0_35px_rgba(201,161,93,0.15)] pl-[0.25em] leading-none select-none"
+              >
+                ACQUISITION
+              </motion.h1>
+              
             </div>
+
+            {/* Subtitle that adapts inline to hover state */}
+            <motion.div 
+              animate={{
+                color: isWordHovered ? '#C9A15D' : '#999999',
+              }}
+              transition={{ duration: 0.65 }}
+              className="text-xs md:text-sm lg:text-base font-mono tracking-[0.4em] uppercase mt-6 pl-[0.4em] transition-colors"
+            >
+              {isWordHovered ? '在交流中习得语言本能' : '在对话中重建英语直觉'}
+            </motion.div>
           </div>
 
           {/* Bottom row */}
