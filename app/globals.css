@@ -128,6 +128,14 @@ canvas {
   }
 }
 
+@keyframes flow-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(400%); }
+}
+.animate-flow-line {
+  animation: flow-line 6s linear infinite;
+}
+
 .clip-sheet {
   border-radius: 1.5rem;
 }
