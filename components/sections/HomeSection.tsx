@@ -130,14 +130,14 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
   });
 
   // ----------------------------------------------------------------------
-  // SCENE 1: Centered Hero Screen (0.0 -> 0.22 Timeline)
+  // SCENE 1: Centered Hero Screen (0.0 -> 0.22 Scroll)
   // ----------------------------------------------------------------------
   const s1Opacity = useTransform(scrollYProgress, [0.0, 0.18, 0.22], [1, 1, 0]);
   const s1Scale = useTransform(scrollYProgress, [0.0, 0.22], [1, 0.94]);
   const s1Y = useTransform(scrollYProgress, [0.0, 0.22], [0, -50]);
 
   // ----------------------------------------------------------------------
-  // SCENE 2: Split Flowing Timeline (0.22 -> 0.52 Timeline)
+  // SCENE 2: Split Flowing Timeline (0.22 -> 0.52 Scroll)
   // ----------------------------------------------------------------------
   const s2Opacity = useTransform(scrollYProgress, [0.18, 0.22, 0.48, 0.52], [0, 1, 1, 0]);
   const s2Scale = useTransform(scrollYProgress, [0.18, 0.22, 0.48, 0.52], [0.96, 1, 1, 0.96]);
@@ -147,7 +147,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
   const s2AfterOpacity = useTransform(scrollYProgress, [0.35, 0.46], [0, 1]);
 
   // ----------------------------------------------------------------------
-  // SCENE 3: 2x2 Bento Features Grid (0.52 -> 0.78 Timeline)
+  // SCENE 3: 2x2 Bento Features Grid (0.52 -> 0.78 Scroll)
   // ----------------------------------------------------------------------
   const s3Opacity = useTransform(scrollYProgress, [0.48, 0.52, 0.74, 0.78], [0, 1, 1, 0]);
   const s3Scale = useTransform(scrollYProgress, [0.48, 0.52, 0.74, 0.78], [0.96, 1, 1, 0.96]);
@@ -158,7 +158,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
   const s3Card34Y = useTransform(scrollYProgress, [0.62, 0.71], [50, 0]);
 
   // ----------------------------------------------------------------------
-  // SCENE 4: Clean Typographic Ending (0.78 -> 1.0 Timeline)
+  // SCENE 4: Clean Typographic Ending (0.78 -> 1.0 Scroll)
   // ----------------------------------------------------------------------
   const s4Opacity = useTransform(scrollYProgress, [0.74, 0.78], [0, 1]);
   const s4Scale = useTransform(scrollYProgress, [0.74, 0.78], [0.96, 1]);
@@ -180,7 +180,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         <div className="sticky top-0 h-dvh w-full overflow-hidden pointer-events-none">
           
           {/* -------------------------------------------------- */}
-          {/* SCENE 1: Centered Hero Screen (0.0 -> 0.22 Scroll) */}
+          {/* SCENE 1: Conceptual Spatial Hero (0.0 -> 0.22 Scroll) */}
           {/* -------------------------------------------------- */}
           <motion.div
             style={{ 
@@ -189,29 +189,52 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               y: s1Y,
               pointerEvents: activeSection === 1 ? 'auto' : 'none'
             }}
-            className="absolute inset-0 flex flex-col items-center justify-center w-full max-w-7xl mx-auto px-6 md:px-12 text-center"
+            className="absolute inset-0 w-full h-full max-w-7xl mx-auto px-6 md:px-12 py-12 flex flex-col justify-between"
           >
-            {/* Eyebrow badge */}
-            <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 bg-brand-accent/10 border border-brand-accent/30 text-[9px] uppercase tracking-[0.2em] font-mono text-brand-accent mb-6">
-              <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />
-              Learniny Alpha
+            {/* Top row */}
+            <div className="w-full flex justify-between items-center pointer-events-auto">
+              <div className="text-[10px] font-mono tracking-[0.25em] text-text-secondary/40 uppercase">
+                LEARNINY // CONCEPT 01
+              </div>
+              <div className="text-[9px] text-[#00E5FF]/60 font-mono tracking-[0.25em] uppercase flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-[#00E5FF] animate-pulse" />
+                ALPHA ACTIVE
+              </div>
             </div>
-            
-            {/* Massive Bold Cinematic Headline */}
-            <h1 className="text-5xl md:text-8xl xl:text-9xl font-display font-extrabold tracking-tighter leading-[1.05] text-text-primary mb-2">
-              用真实的对话<br />
-              <span className="bg-gradient-to-r from-brand-accent via-brand-accent to-[#00E5FF] bg-clip-text text-transparent italic font-normal drop-shadow-[0_0_15px_rgba(0,255,157,0.2)]">找回英语直觉</span>
-            </h1>
 
-            {/* Value Proposition copy with strict whitespace-nowrap highlights */}
-            <p className="mt-8 text-base md:text-xl text-text-secondary font-light leading-relaxed max-w-2xl mx-auto">
-              不背单词，不记死记硬背的规则。AI 会在自然的交流中进行<span className="text-text-primary font-semibold whitespace-nowrap">启发式引导</span>，在潜移默化中将英语内化为你大脑的<span className="text-brand-accent font-semibold whitespace-nowrap">表达直觉</span>。
-            </p>
+            {/* Center concept word */}
+            <div className="flex flex-col items-center justify-center pointer-events-auto py-12">
+              <h1 className="text-6xl md:text-9xl font-display font-light tracking-[0.3em] text-white/95 uppercase drop-shadow-[0_0_30px_rgba(255,255,255,0.05)] pl-[0.3em] leading-none">
+                INTUITION
+              </h1>
+              <div className="text-[10px] md:text-xs font-mono tracking-[0.4em] text-text-secondary/40 uppercase mt-5 pl-[0.4em]">
+                在对话中重建英语直觉
+              </div>
+            </div>
 
-            <div className="mt-12">
-              <span className="text-[10px] text-text-secondary/30 font-mono tracking-widest uppercase animate-pulse">
-                往下滚动开启学习之旅 ↓
-              </span>
+            {/* Bottom row */}
+            <div className="w-full flex flex-col md:flex-row justify-between items-end gap-8 pointer-events-auto">
+              {/* Bottom Left: Poetic caption */}
+              <div className="text-[11px] md:text-xs text-text-secondary/60 leading-relaxed font-light tracking-wide max-w-xs text-left">
+                不背单词，不记词典里死板的条框。<br />
+                AI 在自然的交流中进行启发式引导，<br />
+                在潜移默化中，将英语内化为你大脑的表达本能。
+              </div>
+
+              {/* Bottom Right: Monospace Action link */}
+              <div className="flex flex-col items-end gap-4">
+                <button
+                  onClick={onStartChat}
+                  className="group relative inline-flex items-center gap-3 text-xs font-mono tracking-widest text-brand-accent font-bold cursor-pointer transition-all duration-300"
+                >
+                  <span>[ START CHAT // 立即开启 ]</span>
+                  <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
+                  <span className="absolute bottom-[-4px] left-0 w-0 h-[1px] bg-brand-accent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:w-full" />
+                </button>
+                <div className="text-[8px] text-text-secondary/20 font-mono uppercase tracking-widest mt-1">
+                  SCROLL DOWN TO LEARN MORE
+                </div>
+              </div>
             </div>
           </motion.div>
 
@@ -263,7 +286,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
                   <div className="text-[9px] font-mono uppercase tracking-widest text-text-secondary/40 mb-1">使用之前 / TRADITIONAL</div>
                   <h3 className="text-sm md:text-base font-medium text-text-secondary mb-1">生硬死记单词语法，一开口卡顿难受</h3>
                   <p className="text-[11px] text-text-secondary/60 leading-relaxed font-light">
-                    试图在脑海中对每一个单词和结构进行规则映射，越想对越不敢说，彻底失去口语流利度。
+                    试图在脑海中对每一个单词 and 结构进行规则映射，越想对越不敢说，彻底失去口语流利度。
                   </p>
                 </motion.div>
 
