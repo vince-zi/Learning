@@ -116,7 +116,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
   const transitionTo = (nextFrame: number) => {
     const now = Date.now();
     if (now - lastTransitionTime.current < 750) return; // rate limit frame switching to match transition duration
-    if (nextFrame < 1 || nextFrame > 4) return;
+    if (nextFrame < 1 || nextFrame > 5) return; // 5 frames bounds
     setActiveFrame(nextFrame);
     lastTransitionTime.current = now;
   };
@@ -200,6 +200,31 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
       onTouchEnd={handleTouchEnd}
       className="w-full h-full text-[#FFFFFF] relative overflow-hidden select-none"
     >
+      {/* Persistent CTA Button (Visible on Frames 1-4, fades out on Frame 5) */}
+      <AnimatePresence>
+        {activeFrame < 5 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+            className="absolute bottom-12 right-6 md:right-12 z-50 pointer-events-auto flex flex-col items-end gap-2"
+          >
+            <button
+              onClick={onStartChat}
+              className="group relative inline-flex items-center gap-3 text-xs font-mono tracking-widest text-brand-accent font-bold cursor-pointer transition-all duration-300"
+            >
+              <span>[ START CHAT // 立即开启 ]</span>
+              <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
+              <span className="absolute bottom-[-4px] left-0 w-0 h-[1px] bg-brand-accent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:w-full" />
+            </button>
+            <div className="text-[8px] text-text-secondary/20 font-mono uppercase tracking-widest mt-1">
+              {activeFrame === 1 ? 'SCROLL DOWN TO LEARN MORE' : `FRAME 0${activeFrame} // 05`}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Scene 1: Conceptual Spatial Hero (Frame 1) */}
       <motion.div
         variants={panelVariants}
@@ -284,20 +309,8 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               在潜移默化中，将英语内化为你大脑的表达本能。
             </div>
 
-            {/* Bottom Right: Monospace Action link */}
-            <div className="flex flex-col items-end gap-4">
-              <button
-                onClick={onStartChat}
-                className="group relative inline-flex items-center gap-3 text-xs font-mono tracking-widest text-brand-accent font-bold cursor-pointer transition-all duration-300"
-              >
-                <span>[ START CHAT // 立即开启 ]</span>
-                <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
-                <span className="absolute bottom-[-4px] left-0 w-0 h-[1px] bg-brand-accent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:w-full" />
-              </button>
-              <div className="text-[8px] text-text-secondary/20 font-mono uppercase tracking-widest mt-1">
-                SCROLL DOWN TO LEARN MORE
-              </div>
-            </div>
+            {/* Empty block to align with persistent right CTA */}
+            <div className="w-20 h-10"></div>
           </div>
         </div>
 
@@ -320,21 +333,14 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
           </div>
 
           {/* Bottom info */}
-          <div className="space-y-8 w-full flex flex-col items-center mb-4">
+          <div className="space-y-8 w-full flex flex-col items-center mb-16">
             <div className="text-xs text-text-secondary/80 leading-relaxed font-light tracking-wide max-w-xs">
               不背单词，不记词典里死板的条框。<br />
               AI 在自然的交流中进行启发式引导，<br />
               在潜移默化中，将英语内化为你大脑的表达本能。
             </div>
 
-            <div className="flex flex-col items-center gap-3">
-              <button
-                onClick={onStartChat}
-                className="group relative inline-flex items-center gap-3 text-xs font-mono tracking-widest text-brand-accent font-bold cursor-pointer transition-all duration-300"
-              >
-                <span>[ START CHAT // 立即开启 ]</span>
-                <span className="absolute bottom-[-4px] left-0 w-0 h-[1px] bg-brand-accent transition-all duration-500 group-hover:w-full" />
-              </button>
+            <div className="flex flex-col items-center gap-1">
               <span className="text-[8px] text-text-secondary/30 font-mono tracking-widest uppercase animate-pulse mt-2">
                 向上滑动探索更多 ↓
               </span>
@@ -343,13 +349,83 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         </div>
       </motion.div>
 
-      {/* Scene 2: Split Flowing Timeline (Frame 2) */}
+      {/* Scene 2: Timeless Memory & Companion (Frame 2 - NEW) */}
       <motion.div
         variants={panelVariants}
         initial="hiddenEnter"
         animate={getPanelState(2)}
-        className="absolute inset-0 w-full h-full flex items-center justify-center"
+        className="absolute inset-0 w-full h-full flex items-center justify-center overflow-hidden"
         style={{ pointerEvents: activeFrame === 2 ? 'auto' : 'none' }}
+      >
+        {/* Memory nodes SVG background layer */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-[0.04] pointer-events-none z-0">
+          <svg className="w-[500px] h-[500px] text-brand-accent" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="0.3">
+            <circle cx="20" cy="30" r="1" />
+            <circle cx="50" cy="20" r="1.5" />
+            <circle cx="80" cy="40" r="1" />
+            <circle cx="35" cy="65" r="1.2" />
+            <circle cx="68" cy="78" r="1" />
+            <line x1="20" y1="30" x2="50" y2="20" />
+            <line x1="50" y1="20" x2="80" y2="40" />
+            <line x1="50" y1="20" x2="35" y2="65" />
+            <line x1="35" y1="65" x2="68" y2="78" />
+            <line x1="80" y1="40" x2="68" y2="78" />
+            <motion.line 
+              x1="20" y1="30" x2="50" y2="20" 
+              strokeDasharray="3, 3" 
+              animate={{ strokeDashoffset: [0, -6] }} 
+              transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+            />
+            <motion.line 
+              x1="50" y1="20" x2="35" y2="65" 
+              strokeDasharray="3, 3" 
+              animate={{ strokeDashoffset: [0, -6] }} 
+              transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
+            />
+            <motion.line 
+              x1="80" y1="40" x2="68" y2="78" 
+              strokeDasharray="3, 3" 
+              animate={{ strokeDashoffset: [0, -6] }} 
+              transition={{ repeat: Infinity, duration: 2.5, ease: "linear" }}
+            />
+          </svg>
+        </div>
+
+        <div className="w-full max-w-4xl mx-auto px-6 md:px-12 flex flex-col items-center justify-center text-center z-10">
+          {/* Header */}
+          <div className="space-y-4 max-w-xl mx-auto">
+            <div className="text-[9px] text-[#C9A15D] font-mono tracking-[0.25em] uppercase">
+              长效记忆与成长 / COMPANION & MEMORY
+            </div>
+            <h2 className="text-3xl md:text-5xl font-display font-semibold leading-tight text-text-primary tracking-tight">
+              在记忆中，进化出专属默契
+            </h2>
+          </div>
+
+          {/* Bilingual Dual Column layout */}
+          <div className="flex flex-col md:flex-row items-start justify-center gap-8 md:gap-12 lg:gap-16 w-full mt-10 md:mt-12">
+            {/* Left: Chinese */}
+            <div className="text-xs md:text-sm lg:text-base text-text-secondary/90 leading-relaxed font-light tracking-wide max-w-sm text-center md:text-left">
+              它拥有跨越时间的记忆。<br />
+              AI 会记住你分享过的生活故事、犯过的错与细微的喜好，<br />
+              像一个老朋友一样陪你前行，在岁月中进化出无可替代的温情。
+            </div>
+
+            {/* Right: English */}
+            <div className="text-xs md:text-sm lg:text-base text-text-secondary/50 leading-relaxed font-light italic tracking-wide max-w-sm text-center md:text-left border-t md:border-t-0 md:border-l border-white/5 pt-6 md:pt-0 md:pl-8">
+              Possessing memory across time, it keeps track of your stories, syntax, and sentiments—evolving a tacit understanding unique to the two of you.
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Scene 3: Split Flowing Timeline (Frame 3) */}
+      <motion.div
+        variants={panelVariants}
+        initial="hiddenEnter"
+        animate={getPanelState(3)}
+        className="absolute inset-0 w-full h-full flex items-center justify-center"
+        style={{ pointerEvents: activeFrame === 3 ? 'auto' : 'none' }}
       >
         <div className="w-full max-w-5xl mx-auto px-6 md:px-12 flex flex-col md:flex-row items-center justify-between gap-12 lg:gap-20">
           {/* Left Header info */}
@@ -370,7 +446,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
             <div className="absolute left-[-1px] top-0 bottom-0 w-[2px] bg-white/5 overflow-hidden">
               <motion.div 
                 initial={{ scaleY: 0 }}
-                animate={{ scaleY: activeFrame === 2 ? 1 : 0 }}
+                animate={{ scaleY: activeFrame === 3 ? 1 : 0 }}
                 transition={{ duration: 1.2, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
                 className="w-full h-full bg-gradient-to-b from-brand-accent/50 via-[#00E5FF]/30 to-transparent origin-top"
               />
@@ -385,7 +461,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               {/* Node Before */}
               <motion.div 
                 initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: activeFrame === 2 ? 1 : 0, y: activeFrame === 2 ? 0 : 15 }}
+                animate={{ opacity: activeFrame === 3 ? 1 : 0, y: activeFrame === 3 ? 0 : 15 }}
                 transition={{ duration: 0.8, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
                 className="relative group"
               >
@@ -402,7 +478,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               {/* Node After */}
               <motion.div 
                 initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: activeFrame === 2 ? 1 : 0, y: activeFrame === 2 ? 0 : 15 }}
+                animate={{ opacity: activeFrame === 3 ? 1 : 0, y: activeFrame === 3 ? 0 : 15 }}
                 transition={{ duration: 0.8, delay: 0.7, ease: [0.16, 1, 0.3, 1] }}
                 className="relative group"
               >
@@ -420,13 +496,13 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         </div>
       </motion.div>
 
-      {/* Scene 3: 2x2 Bento Features Grid (Frame 3) */}
+      {/* Scene 4: 2x2 Bento Features Grid (Frame 4) */}
       <motion.div
         variants={panelVariants}
         initial="hiddenEnter"
-        animate={getPanelState(3)}
+        animate={getPanelState(4)}
         className="absolute inset-0 w-full h-full flex items-center justify-center"
-        style={{ pointerEvents: activeFrame === 3 ? 'auto' : 'none' }}
+        style={{ pointerEvents: activeFrame === 4 ? 'auto' : 'none' }}
       >
         <div className="w-full max-w-5xl mx-auto px-6 md:px-12 flex flex-col justify-center gap-8">
           {/* Header info */}
@@ -442,7 +518,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
             {/* Card 1 */}
             <motion.div 
               initial={{ opacity: 0, y: 25 }}
-              animate={{ opacity: activeFrame === 3 ? 1 : 0, y: activeFrame === 3 ? 0 : 25 }}
+              animate={{ opacity: activeFrame === 4 ? 1 : 0, y: activeFrame === 4 ? 0 : 25 }}
               transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
             >
               <SpotlightCard
@@ -458,7 +534,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
             {/* Card 2 */}
             <motion.div 
               initial={{ opacity: 0, y: 25 }}
-              animate={{ opacity: activeFrame === 3 ? 1 : 0, y: activeFrame === 3 ? 0 : 25 }}
+              animate={{ opacity: activeFrame === 4 ? 1 : 0, y: activeFrame === 4 ? 0 : 25 }}
               transition={{ duration: 0.8, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
             >
               <SpotlightCard
@@ -474,7 +550,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
             {/* Card 3 */}
             <motion.div 
               initial={{ opacity: 0, y: 25 }}
-              animate={{ opacity: activeFrame === 3 ? 1 : 0, y: activeFrame === 3 ? 0 : 25 }}
+              animate={{ opacity: activeFrame === 4 ? 1 : 0, y: activeFrame === 4 ? 0 : 25 }}
               transition={{ duration: 0.8, delay: 0.45, ease: [0.16, 1, 0.3, 1] }}
             >
               <SpotlightCard
@@ -490,7 +566,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
             {/* Card 4 */}
             <motion.div 
               initial={{ opacity: 0, y: 25 }}
-              animate={{ opacity: activeFrame === 3 ? 1 : 0, y: activeFrame === 3 ? 0 : 25 }}
+              animate={{ opacity: activeFrame === 4 ? 1 : 0, y: activeFrame === 4 ? 0 : 25 }}
               transition={{ duration: 0.8, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
             >
               <SpotlightCard
@@ -506,18 +582,18 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         </div>
       </motion.div>
 
-      {/* Scene 4: Clean Typographic Ending (Frame 4) */}
+      {/* Scene 5: Clean Typographic Ending (Frame 5) */}
       <motion.div
         variants={panelVariants}
         initial="hiddenEnter"
-        animate={getPanelState(4)}
+        animate={getPanelState(5)}
         className="absolute inset-0 w-full h-full flex flex-col justify-center items-center"
-        style={{ pointerEvents: activeFrame === 4 ? 'auto' : 'none' }}
+        style={{ pointerEvents: activeFrame === 5 ? 'auto' : 'none' }}
       >
         {/* The Loop Typography */}
         <motion.div 
           initial={{ opacity: 0, y: 25 }}
-          animate={{ opacity: activeFrame === 4 ? 1 : 0, y: activeFrame === 4 ? 0 : 25 }}
+          animate={{ opacity: activeFrame === 5 ? 1 : 0, y: activeFrame === 5 ? 0 : 25 }}
           transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
           className="space-y-6 max-w-3xl px-6 md:px-12 text-center"
         >
@@ -533,7 +609,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         {/* Ending CTA Link Button */}
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: activeFrame === 4 ? 1 : 0, scale: activeFrame === 4 ? 1 : 0.95 }}
+          animate={{ opacity: activeFrame === 5 ? 1 : 0, scale: activeFrame === 5 ? 1 : 0.95 }}
           transition={{ duration: 0.8, delay: 0.45, ease: [0.16, 1, 0.3, 1] }}
           className="mt-12 lg:mt-16 flex flex-col items-center gap-6"
         >
