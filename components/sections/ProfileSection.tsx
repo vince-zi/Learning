@@ -1,10 +1,11 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Target, Activity, Zap, Clipboard, Check, Sparkles, AlertCircle, MessageSquare, Send, ChevronDown } from 'lucide-react';
+import { Target, Activity, Zap, Clipboard, Check, Sparkles, AlertCircle, MessageSquare, Send, ChevronDown, KeyRound, UserRound, Unlock } from 'lucide-react';
 import { supabase } from '@/lib/db/supabase-client';
 import { useSessionStore } from '@/store/session-store';
-import { getUserId } from '@/lib/user-id';
+import { getUserId, setUserId } from '@/lib/user-id';
+import { v4 as uuidv4 } from 'uuid';
 
 function getFriendlyErrorName(type: string): string {
   const names: Record<string, string> = {
@@ -38,6 +39,14 @@ export function ProfileSection() {
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // 同步账号相关的状态
+  const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [username, setUsername] = useState<string | null>(null);
+  const [syncUsername, setSyncUsername] = useState('');
+  const [syncPasscode, setSyncPasscode] = useState('');
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+
   useEffect(() => {
     if (activeSection !== 'profile') return;
 
@@ -45,7 +54,21 @@ export function ProfileSection() {
     const loadProfileData = async () => {
       setLoading(true);
       try {
-        const userId = getUserId();
+        const userId = getUserId() || '';
+        if (mounted) {
+          setCurrentUserId(userId);
+        }
+
+        // 0. 查询该用户的昵称（确认是否已绑定用户名）
+        const { data: userData } = await supabase
+          .from('users')
+          .select('nickname')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (mounted) {
+          setUsername(userData?.nickname || null);
+        }
         
         // 1. 获取 profile
         const { data: profileData } = await supabase
@@ -163,7 +186,7 @@ export function ProfileSection() {
 
     loadProfileData();
     return () => { mounted = false; };
-  }, [activeSection]);
+  }, [activeSection, currentUserId]);
 
   const cefr = profile?.cefr_level || 'A1';
   
@@ -221,6 +244,57 @@ ${weaknessesStr}`;
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  };
+
+  const handleSync = async () => {
+    const trimmedUsername = syncUsername.trim();
+    const trimmedPasscode = syncPasscode.trim();
+    if (!trimmedUsername || !trimmedPasscode) {
+      setSyncError('用户名和暗号不能为空');
+      return;
+    }
+    if (trimmedUsername.length < 2 || trimmedPasscode.length < 2) {
+      setSyncError('用户名和暗号长度不能少于 2 个字符');
+      return;
+    }
+    setSyncLoading(true);
+    setSyncError(null);
+    try {
+      const res = await fetch('/api/users/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: trimmedUsername,
+          passcode: trimmedPasscode,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || data.error || '同步失败');
+      }
+      
+      // 保存至本地 localStorage
+      setUserId(data.userId);
+      
+      // 重置客户端 Zustand session 状态以清空历史会话
+      useSessionStore.getState().resetSession();
+      
+      // 更新 React 状态触发本页重载数据
+      setCurrentUserId(data.userId);
+      setSyncUsername('');
+      setSyncPasscode('');
+    } catch (err: any) {
+      setSyncError(err.message || '连接服务器失败，请检查网络。');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    const newAnonId = `anon_${uuidv4()}`;
+    setUserId(newAnonId);
+    useSessionStore.getState().resetSession();
+    setCurrentUserId(newAnonId);
   };
 
   const handleFeedbackSubmit = async () => {
@@ -338,16 +412,87 @@ ${weaknessesStr}`;
               )}
             </div>
 
-            <div className="mt-8 pt-6 border-t border-[#1A1A1A]">
+            <div className="mt-8 pt-6 border-t border-[#1A1A1A] space-y-4">
               <div className="flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 text-[#888888] mt-0.5 flex-shrink-0" />
                 <p className="text-[11px] leading-normal text-[#666666]">
                   基于你在 Learniny 的口语实战对话和语法纠错记录实时计算。多开启对话可以提高评估精度。
                 </p>
               </div>
-              <div className="mt-3 text-center">
-                <span className="text-[9px] font-mono text-[#333333] select-all">{getUserId() || '...'}</span>
-              </div>
+
+              {username ? (
+                // 已同步账号状态
+                <div className="bg-[#0A0A0A] border border-[#00FF9D]/20 rounded-2xl p-4 space-y-3 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-12 h-12 bg-[#00FF9D]/5 rounded-bl-full flex items-center justify-center pointer-events-none">
+                    <Zap className="w-3 h-3 text-[#00FF9D]" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <UserRound className="w-3.5 h-3.5 text-[#00FF9D]" />
+                    <span className="text-xs font-mono font-bold text-[#FFFFFF]">同步账号: {username}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] text-[#666666] font-mono">
+                    <KeyRound className="w-3.5 h-3.5 text-[#444444]" />
+                    <span>暗号已加密保护</span>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full bg-[#141414] hover:bg-[#1A1A1A] border border-[#222222] text-[#888888] hover:text-[#FFFFFF] rounded-xl py-2 text-xs font-mono transition-colors duration-200"
+                  >
+                    退出同步 / 切换账号
+                  </button>
+                </div>
+              ) : (
+                // 未同步账号状态 (绑定表单)
+                <div className="bg-[#060606] border border-[#141414] rounded-2xl p-4 space-y-3">
+                  <span className="text-[10px] font-mono tracking-widest text-[#888888] uppercase block">多端同步测试进度</span>
+                  
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <UserRound className="absolute left-3 top-2.5 w-3.5 h-3.5 text-[#444444]" />
+                      <input
+                        type="text"
+                        value={syncUsername}
+                        onChange={(e) => {
+                          setSyncUsername(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''));
+                          setSyncError(null);
+                        }}
+                        placeholder="输入测试用户名"
+                        className="w-full bg-[#0D0D0D] border border-[#1A1A1A] focus:border-[#00E5FF]/40 rounded-xl pl-9 pr-3 py-2 text-xs font-mono text-[#FFFFFF] placeholder:text-[#444444] focus:outline-none transition-colors duration-200"
+                      />
+                    </div>
+                    
+                    <div className="relative">
+                      <KeyRound className="absolute left-3 top-2.5 w-3.5 h-3.5 text-[#444444]" />
+                      <input
+                        type="text"
+                        value={syncPasscode}
+                        onChange={(e) => {
+                          setSyncPasscode(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''));
+                          setSyncError(null);
+                        }}
+                        placeholder="输入同步暗号 (无则自动注册)"
+                        className="w-full bg-[#0D0D0D] border border-[#1A1A1A] focus:border-[#00E5FF]/40 rounded-xl pl-9 pr-3 py-2 text-xs font-mono text-[#FFFFFF] placeholder:text-[#444444] focus:outline-none transition-colors duration-200"
+                      />
+                    </div>
+                  </div>
+
+                  {syncError && (
+                    <p className="text-[10px] text-[#FF3366] font-mono leading-normal">{syncError}</p>
+                  )}
+
+                  <button
+                    onClick={handleSync}
+                    disabled={syncLoading}
+                    className="w-full bg-[#00E5FF]/10 border border-[#00E5FF]/30 hover:bg-[#00E5FF]/20 text-[#00E5FF] disabled:bg-[#111] disabled:border-transparent disabled:text-[#444] rounded-xl py-2.5 text-xs font-mono font-bold transition-all duration-200"
+                  >
+                    {syncLoading ? '正在核对并同步...' : '保存并同步'}
+                  </button>
+
+                  <p className="text-[9px] text-[#444444] leading-normal font-sans">
+                    💡 提示：在手机和其他电脑输入相同的用户名与暗号对，即可同步词汇结晶、错题及星图星盘。
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </motion.div>
