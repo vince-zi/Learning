@@ -55,6 +55,7 @@ test.pdf
 .windsurfrules
 .agents/
 .hermes/
+agent/
 antigravity/
 
 # runtime logs
