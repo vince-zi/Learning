@@ -11,27 +11,32 @@ const WORD_A = 'INTUITION';
 const WORD_B = 'EVOLUTION';
 const DECAY_MS = 900; // how long the orange letter lingers after mouse leaves
 
-function CharCell({ charA, charB, index, anyLit, onAnyLit }: {
+function CharCell({ charA, charB, onLitChange }: {
   charA: string;
   charB: string;
-  index: number;
-  anyLit: boolean;
-  onAnyLit: (lit: boolean) => void;
+  onLitChange: (delta: 1 | -1) => void;
 }) {
   const [lit, setLit] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLitRef = useRef(false); // track without re-render to prevent double-counting
 
   const handleEnter = useCallback(() => {
+    if (isLitRef.current) return; // already lit, mouse re-entered — don't double-count
     if (timerRef.current) clearTimeout(timerRef.current);
+    isLitRef.current = true;
     setLit(true);
-    onAnyLit(true);
-  }, [onAnyLit]);
+    onLitChange(1);
+  }, [onLitChange]);
 
   const handleLeave = useCallback(() => {
     timerRef.current = setTimeout(() => {
-      setLit(false);
+      if (isLitRef.current) {
+        isLitRef.current = false;
+        setLit(false);
+        onLitChange(-1);
+      }
     }, DECAY_MS);
-  }, []);
+  }, [onLitChange]);
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
@@ -173,29 +178,18 @@ function SpotlightCard({
 // ----------------------------------------------------------------------
 export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
   const [activeFrame, setActiveFrame] = useState(1);
-  const [anyCharLit, setAnyCharLit] = useState(false);
+  const [allLit, setAllLit] = useState(false); // true only when ALL 9 chars are simultaneously orange
+  const litCountRef = useRef(0);              // how many chars are currently lit
   const lastTransitionTime = useRef(0);
   const touchStartY = useRef(0);
 
-  // Track whether any character is currently lit (for subtitle colour)
-  const handleAnyLit = useCallback((lit: boolean) => {
-    if (lit) setAnyCharLit(true);
-    // Don't reset here — let the individual char timers do it
-    // We check anyCharLit only for subtitle; reset after short delay when nothing is lit
+  // Called by each CharCell with +1 (lit) or -1 (decayed back)
+  const handleLitChange = useCallback((delta: 1 | -1) => {
+    litCountRef.current = Math.max(0, litCountRef.current + delta);
+    setAllLit(litCountRef.current === WORD_A.length);
   }, []);
 
-  // Reset anyCharLit after all chars have decayed
-  const anyLitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const handleCharLit = useCallback((lit: boolean) => {
-    if (lit) {
-      if (anyLitTimerRef.current) clearTimeout(anyLitTimerRef.current);
-      setAnyCharLit(true);
-    } else {
-      anyLitTimerRef.current = setTimeout(() => setAnyCharLit(false), DECAY_MS + 100);
-    }
-  }, []);
-
-  useEffect(() => () => { if (anyLitTimerRef.current) clearTimeout(anyLitTimerRef.current); }, []);
+  useEffect(() => () => { litCountRef.current = 0; }, []);
 
   const transitionTo = (nextFrame: number) => {
     const now = Date.now();
@@ -334,22 +328,20 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               {WORD_A.split('').map((charA, i) => (
                 <CharCell
                   key={i}
-                  index={i}
                   charA={charA}
                   charB={WORD_B[i]}
-                  anyLit={anyCharLit}
-                  onAnyLit={handleCharLit}
+                  onLitChange={handleLitChange}
                 />
               ))}
             </div>
 
-            {/* Subtitle synced to anyCharLit */}
+            {/* Subtitle: switches only when ALL letters are simultaneously orange */}
             <motion.div
-              animate={{ color: anyCharLit ? '#C9A15D' : '#999999' }}
-              transition={{ duration: 0.5 }}
+              animate={{ color: allLit ? '#C9A15D' : '#999999' }}
+              transition={{ duration: 0.4 }}
               className="text-xs md:text-sm lg:text-base font-mono tracking-[0.4em] uppercase mt-6 pl-[0.4em]"
             >
-              {anyCharLit ? '在交流中习得语言本能' : '在对话中重建英语直觉'}
+              {allLit ? '在交流中习得语言本能' : '在对话中重建英语直觉'}
             </motion.div>
           </div>
 
