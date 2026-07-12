@@ -70,3 +70,31 @@ information_architecture.md
 
 # Local Netlify folder
 .netlify
+
+# Development / AI coordination files
+/HANDOFF.md
+/AGENTS.md
+/FILES-CREATED.txt
+
+# Testing logs and configurations
+/TESTING-SUMMARY.md
+/TEST-AUTOMATION-COMPLETE.md
+/AUTO-RUN-STATUS.md
+/check-test-env.js
+/run-validation.js
+/run-test-direct.js
+/simple-test.js
+/run-test.bat
+/vitest.config.ts
+/tests/
+
+# Documentation & design
+/START-HERE.md
+/QUICK-TEST-GUIDE.md
+/RUN-TESTS.md
+/VALIDATION-GUIDE.md
+/MANUAL-RUN-REQUIRED.md
+/docs/
+
+# Local session storage
+/storage/
