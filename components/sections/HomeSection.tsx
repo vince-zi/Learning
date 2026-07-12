@@ -1,8 +1,73 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LiteModeToggle } from '@/components/layout/ClientLayout';
+
+// ----------------------------------------------------------------------
+// Character Cell: Independent hover decay state per letter
+// ----------------------------------------------------------------------
+const WORD_A = 'INTUITION';
+const WORD_B = 'EVOLUTION';
+const DECAY_MS = 900; // how long the orange letter lingers after mouse leaves
+
+function CharCell({ charA, charB, index, anyLit, onAnyLit }: {
+  charA: string;
+  charB: string;
+  index: number;
+  anyLit: boolean;
+  onAnyLit: (lit: boolean) => void;
+}) {
+  const [lit, setLit] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleEnter = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setLit(true);
+    onAnyLit(true);
+  }, [onAnyLit]);
+
+  const handleLeave = useCallback(() => {
+    timerRef.current = setTimeout(() => {
+      setLit(false);
+    }, DECAY_MS);
+  }, []);
+
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+
+  return (
+    <div
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
+      className="relative flex items-center justify-center overflow-hidden cursor-default"
+      style={{ width: '1.05em', height: '1em' }}
+    >
+      {/* Layer A: white original letter */}
+      <motion.span
+        animate={{
+          opacity: lit ? 0 : 1,
+          y: lit ? -30 : 0,
+        }}
+        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        className="absolute inset-0 flex items-center justify-center text-white/95 select-none"
+      >
+        {charA}
+      </motion.span>
+
+      {/* Layer B: orange evolved letter */}
+      <motion.span
+        animate={{
+          opacity: lit ? 1 : 0,
+          y: lit ? 0 : 30,
+        }}
+        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        className="absolute inset-0 flex items-center justify-center text-[#C9A15D] drop-shadow-[0_0_20px_rgba(201,161,93,0.5)] select-none"
+      >
+        {charB}
+      </motion.span>
+    </div>
+  );
+}
 
 // ----------------------------------------------------------------------
 // Spotlight Card Component (Doppelrand with Interactive Mouse Spotlight)
@@ -108,10 +173,29 @@ function SpotlightCard({
 // ----------------------------------------------------------------------
 export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
   const [activeFrame, setActiveFrame] = useState(1);
-  const [isWordHovered, setIsWordHovered] = useState(false);
-  const [mousePos, setMousePos] = useState({ x: -999, y: -999 });
+  const [anyCharLit, setAnyCharLit] = useState(false);
   const lastTransitionTime = useRef(0);
   const touchStartY = useRef(0);
+
+  // Track whether any character is currently lit (for subtitle colour)
+  const handleAnyLit = useCallback((lit: boolean) => {
+    if (lit) setAnyCharLit(true);
+    // Don't reset here — let the individual char timers do it
+    // We check anyCharLit only for subtitle; reset after short delay when nothing is lit
+  }, []);
+
+  // Reset anyCharLit after all chars have decayed
+  const anyLitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleCharLit = useCallback((lit: boolean) => {
+    if (lit) {
+      if (anyLitTimerRef.current) clearTimeout(anyLitTimerRef.current);
+      setAnyCharLit(true);
+    } else {
+      anyLitTimerRef.current = setTimeout(() => setAnyCharLit(false), DECAY_MS + 100);
+    }
+  }, []);
+
+  useEffect(() => () => { if (anyLitTimerRef.current) clearTimeout(anyLitTimerRef.current); }, []);
 
   const transitionTo = (nextFrame: number) => {
     const now = Date.now();
@@ -148,14 +232,6 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
     }
   };
 
-  // Capture mouse move relative to the centered concept text container for pixel-perfect mask alignment
-  const handleWordMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setMousePos({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    });
-  };
 
   // Framer Motion panel exit/enter transitions
   const panelVariants = {
@@ -249,55 +325,31 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
             </div>
           </div>
 
-          {/* Center concept word with interactive mouse mask window */}
+          {/* Center concept word: character-cell decay state machine */}
           <div className="flex flex-col items-center justify-center pointer-events-auto py-12">
-            <div 
-              onMouseMove={handleWordMouseMove}
-              onMouseEnter={() => setIsWordHovered(true)}
-              onMouseLeave={() => setIsWordHovered(false)}
-              className="relative h-[9.5rem] overflow-hidden flex items-center justify-center w-[1000px] cursor-default pointer-events-auto"
+            <div
+              className="flex items-center justify-center text-6xl md:text-9xl font-display font-light uppercase leading-none"
+              style={{ letterSpacing: '0.3em', paddingLeft: '0.3em' }}
             >
-              {/* INTUITION (Default - Hidden under feathered mouse circle mask) */}
-              <motion.h1
-                style={{
-                  maskImage: isWordHovered 
-                    ? `radial-gradient(circle 42px at ${mousePos.x}px ${mousePos.y}px, transparent 0%, black 100%)` 
-                    : 'none',
-                  WebkitMaskImage: isWordHovered 
-                    ? `radial-gradient(circle 42px at ${mousePos.x}px ${mousePos.y}px, transparent 0%, black 100%)` 
-                    : 'none',
-                }}
-                className="text-6xl md:text-9xl font-display font-light tracking-[0.3em] text-white/95 uppercase drop-shadow-[0_0_35px_rgba(255,255,255,0.04)] pl-[0.3em] leading-none select-none transition-all duration-300"
-              >
-                INTUITION
-              </motion.h1>
-
-              {/* EVOLUTION (Hovered - Only visible inside feathered mouse circle mask) */}
-              <motion.h1
-                style={{
-                  maskImage: isWordHovered 
-                    ? `radial-gradient(circle 42px at ${mousePos.x}px ${mousePos.y}px, black 0%, transparent 100%)` 
-                    : 'none',
-                  WebkitMaskImage: isWordHovered 
-                    ? `radial-gradient(circle 42px at ${mousePos.x}px ${mousePos.y}px, black 0%, transparent 100%)` 
-                    : 'none',
-                  opacity: isWordHovered ? 1 : 0,
-                }}
-                className="absolute text-6xl md:text-9xl font-display font-light tracking-[0.3em] text-[#C9A15D] uppercase drop-shadow-[0_0_35px_rgba(201,161,93,0.15)] pl-[0.3em] leading-none select-none transition-opacity duration-300"
-              >
-                EVOLUTION
-              </motion.h1>
+              {WORD_A.split('').map((charA, i) => (
+                <CharCell
+                  key={i}
+                  index={i}
+                  charA={charA}
+                  charB={WORD_B[i]}
+                  anyLit={anyCharLit}
+                  onAnyLit={handleCharLit}
+                />
+              ))}
             </div>
 
-            {/* Subtitle that adapts inline to hover state */}
-            <motion.div 
-              animate={{
-                color: isWordHovered ? '#C9A15D' : '#999999',
-              }}
-              transition={{ duration: 0.65 }}
-              className="text-xs md:text-sm lg:text-base font-mono tracking-[0.4em] uppercase mt-6 pl-[0.4em] transition-colors"
+            {/* Subtitle synced to anyCharLit */}
+            <motion.div
+              animate={{ color: anyCharLit ? '#C9A15D' : '#999999' }}
+              transition={{ duration: 0.5 }}
+              className="text-xs md:text-sm lg:text-base font-mono tracking-[0.4em] uppercase mt-6 pl-[0.4em]"
             >
-              {isWordHovered ? '在交流中习得语言本能' : '在对话中重建英语直觉'}
+              {anyCharLit ? '在交流中习得语言本能' : '在对话中重建英语直觉'}
             </motion.div>
           </div>
 
