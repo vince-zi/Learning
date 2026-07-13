@@ -458,7 +458,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
           </svg>
         </div>
 
-        <div className="w-full max-w-4xl mx-auto px-6 md:px-12 flex flex-col items-center justify-between md:justify-center text-center z-10 h-[58dvh] md:h-auto py-4 md:py-0 space-y-6 md:space-y-16">
+        <div className="w-full max-w-4xl mx-auto px-6 md:px-12 flex flex-col items-center justify-center text-center z-10 space-y-6 xs:space-y-8 md:space-y-16">
           {/* Header */}
           <div className="space-y-2 xs:space-y-4">
             <div className="text-[10px] md:text-xs lg:text-sm text-[#C9A15D] font-mono tracking-[0.25em] uppercase">
@@ -515,7 +515,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         className="absolute inset-0 w-full h-full flex items-center justify-center"
         style={{ pointerEvents: activeFrame === 3 ? 'auto' : 'none' }}
       >
-        <div className="w-full max-w-5xl mx-auto px-6 md:px-12 flex flex-col md:flex-row items-center justify-between gap-6 md:gap-12 lg:gap-20 h-[68dvh] md:h-auto py-4 md:py-0">
+        <div className="w-full max-w-5xl mx-auto px-6 md:px-12 flex flex-col md:flex-row items-center justify-between gap-6 md:gap-12 lg:gap-20">
           {/* Left Header info */}
           <div className="w-full md:w-5/12 text-left space-y-2 md:space-y-4">
             <div className="text-[10px] md:text-xs lg:text-sm text-[#00E5FF] font-mono tracking-[0.25em] uppercase">转变过程 / THE TRANSITION</div>
@@ -592,7 +592,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         className="absolute inset-0 w-full h-full flex items-center justify-center"
         style={{ pointerEvents: activeFrame === 4 ? 'auto' : 'none' }}
       >
-        <div className="w-full max-w-5xl mx-auto px-6 md:px-12 flex flex-col justify-between md:justify-center gap-4 sm:gap-8 h-[65dvh] md:h-auto py-4 md:py-0">
+        <div className="w-full max-w-5xl mx-auto px-6 md:px-12 flex flex-col justify-center gap-4 sm:gap-8">
           {/* Header info */}
           <div className="text-left max-w-xl">
             <div className="text-[10px] md:text-xs lg:text-sm text-[#00FF9D] font-mono tracking-[0.25em] uppercase mb-2">学习矩阵 / METHODOLOGY</div>
@@ -675,45 +675,43 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         variants={panelVariants}
         initial="hiddenEnter"
         animate={getPanelState(5)}
-        className="absolute inset-0 w-full h-full flex items-center justify-center"
+        className="absolute inset-0 w-full h-full flex flex-col justify-center items-center"
         style={{ pointerEvents: activeFrame === 5 ? 'auto' : 'none' }}
       >
-        <div className="w-full max-w-3xl mx-auto px-6 md:px-12 flex flex-col justify-between md:justify-center items-center h-[50dvh] md:h-auto py-4 md:py-0">
-          {/* The Loop Typography */}
-          <motion.div 
-            initial={{ opacity: 0, y: 25 }}
-            animate={{ opacity: activeFrame === 5 ? 1 : 0, y: activeFrame === 5 ? 0 : 25 }}
-            transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="space-y-4 xs:space-y-6 text-center"
-          >
-            <div className="text-[10px] md:text-xs lg:text-sm text-[#C9A15D] font-mono tracking-[0.25em] uppercase">成长闭环 / THE CORE CYCLE</div>
-            <h2 className="text-xl xs:text-2xl md:text-5xl font-display font-semibold leading-tight text-text-primary tracking-tight">
-              练习 → 自动捕捉错误 → 温习强化 → 带回对话继续用
-            </h2>
-            <p className="text-xs md:text-sm lg:text-base text-text-secondary leading-relaxed font-light max-w-2xl mx-auto">
-              Learniny 不是简单的刷题册，而是一套自我进化学习的精密闭环。您说出的每一句话都是画像的养料，在“对话-诊断-纠错-复用”的闭环中周而复始，英语直觉螺旋上升。
-            </p>
-          </motion.div>
+        {/* The Loop Typography */}
+        <motion.div 
+          initial={{ opacity: 0, y: 25 }}
+          animate={{ opacity: activeFrame === 5 ? 1 : 0, y: activeFrame === 5 ? 0 : 25 }}
+          transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+          className="space-y-4 xs:space-y-6 max-w-3xl px-6 md:px-12 text-center"
+        >
+          <div className="text-[10px] md:text-xs lg:text-sm text-[#C9A15D] font-mono tracking-[0.25em] uppercase">成长闭环 / THE CORE CYCLE</div>
+          <h2 className="text-xl xs:text-2xl md:text-5xl font-display font-semibold leading-tight text-text-primary tracking-tight">
+            练习 → 自动捕捉错误 → 温习强化 → 带回对话继续用
+          </h2>
+          <p className="text-xs md:text-sm lg:text-base text-text-secondary leading-relaxed font-light max-w-2xl mx-auto">
+            Learniny 不是简单的刷题册，而是一套自我进化学习的精密闭环。您说出的每一句话都是画像的养料，在“对话-诊断-纠错-复用”的闭环中周而复始，英语直觉螺旋上升。
+          </p>
+        </motion.div>
 
-          {/* Ending CTA Link Button */}
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: activeFrame === 5 ? 1 : 0, scale: activeFrame === 5 ? 1 : 0.95 }}
-            transition={{ duration: 0.8, delay: 0.45, ease: [0.16, 1, 0.3, 1] }}
-            className="mt-6 xs:mt-12 lg:mt-16 flex flex-col items-center gap-4 sm:gap-6"
+        {/* Ending CTA Link Button */}
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: activeFrame === 5 ? 1 : 0, scale: activeFrame === 5 ? 1 : 0.95 }}
+          transition={{ duration: 0.8, delay: 0.45, ease: [0.16, 1, 0.3, 1] }}
+          className="mt-6 xs:mt-12 lg:mt-16 flex flex-col items-center gap-4 sm:gap-6"
+        >
+          <button
+            onClick={onStartChat}
+            className="group relative inline-flex items-center gap-3.5 text-xs xs:text-sm md:text-base font-mono tracking-wider text-brand-accent font-bold cursor-pointer transition-all duration-300 pointer-events-auto"
           >
-            <button
-              onClick={onStartChat}
-              className="group relative inline-flex items-center gap-3.5 text-xs xs:text-sm md:text-base font-mono tracking-wider text-brand-accent font-bold cursor-pointer transition-all duration-300 pointer-events-auto"
-            >
-              <span>立即开启对话 / START CHAT</span>
-              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-brand-accent/10 border border-brand-accent/30 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:bg-brand-accent group-hover:text-black">
-                <span className="text-sm transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-0.5 group-hover:scale-110">→</span>
-              </span>
-              <span className="absolute bottom-[-6px] left-0 w-0 h-[1.5px] bg-brand-accent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:w-full" />
-            </button>
-          </motion.div>
-        </div>
+            <span>立即开启对话 / START CHAT</span>
+            <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-brand-accent/10 border border-brand-accent/30 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:bg-brand-accent group-hover:text-black">
+              <span className="text-sm transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-0.5 group-hover:scale-110">→</span>
+            </span>
+            <span className="absolute bottom-[-6px] left-0 w-0 h-[1.5px] bg-brand-accent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:w-full" />
+          </button>
+        </motion.div>
       </motion.div>
 
     </div>
