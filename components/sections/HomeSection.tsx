@@ -2,7 +2,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LiteModeToggle } from '@/components/layout/ClientLayout';
 
 // ----------------------------------------------------------------------
 // Character Cell: Independent hover decay state per letter
@@ -178,18 +177,34 @@ function SpotlightCard({
 // ----------------------------------------------------------------------
 export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
   const [activeFrame, setActiveFrame] = useState(1);
-  const [allLit, setAllLit] = useState(false); // true only when ALL 9 chars are simultaneously orange
+  const [showEvolvedSubtitle, setShowEvolvedSubtitle] = useState(false);
   const litCountRef = useRef(0);              // how many chars are currently lit
+  const subtitleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTransitionTime = useRef(0);
   const touchStartY = useRef(0);
 
   // Called by each CharCell with +1 (lit) or -1 (decayed back)
   const handleLitChange = useCallback((delta: 1 | -1) => {
     litCountRef.current = Math.max(0, litCountRef.current + delta);
-    setAllLit(litCountRef.current === WORD_A.length);
+    
+    if (litCountRef.current > 0) {
+      if (subtitleTimerRef.current) {
+        clearTimeout(subtitleTimerRef.current);
+        subtitleTimerRef.current = null;
+      }
+      setShowEvolvedSubtitle(true);
+    } else {
+      if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+      subtitleTimerRef.current = setTimeout(() => {
+        setShowEvolvedSubtitle(false);
+      }, 1500); // 1.5 seconds delay decay for subtitle transition back
+    }
   }, []);
 
-  useEffect(() => () => { litCountRef.current = 0; }, []);
+  useEffect(() => () => {
+    litCountRef.current = 0;
+    if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+  }, []);
 
   const transitionTo = (nextFrame: number) => {
     const now = Date.now();
@@ -335,14 +350,34 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               ))}
             </div>
 
-            {/* Subtitle: switches only when ALL letters are simultaneously orange */}
-            <motion.div
-              animate={{ color: allLit ? '#C9A15D' : '#999999' }}
-              transition={{ duration: 0.4 }}
-              className="text-xs md:text-sm lg:text-base font-mono tracking-[0.4em] uppercase mt-6 pl-[0.4em]"
-            >
-              {allLit ? '在交流中习得语言本能' : '在对话中重建英语直觉'}
-            </motion.div>
+            {/* Subtitle: switches instantly on hover, decays with a 1.5s delay */}
+            <div className="relative h-6 mt-6 flex items-center justify-center">
+              <AnimatePresence mode="popLayout">
+                {showEvolvedSubtitle ? (
+                  <motion.div
+                    key="evolved"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                    className="text-xs md:text-sm lg:text-base font-mono tracking-[0.4em] uppercase pl-[0.4em] text-[#C9A15D]"
+                  >
+                    在交流中习得语言本能
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="intuition"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                    className="text-xs md:text-sm lg:text-base font-mono tracking-[0.4em] uppercase pl-[0.4em] text-[#999999]"
+                  >
+                    在对话中重建英语直觉
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
 
           {/* Bottom row (Left side is blank, keeping Hero spatial clean) */}
@@ -423,7 +458,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
           </svg>
         </div>
 
-        <div className="w-full max-w-4xl mx-auto px-6 md:px-12 flex flex-col items-center justify-center text-center z-10 space-y-6 xs:space-y-8 md:space-y-16">
+        <div className="w-full max-w-4xl mx-auto px-6 md:px-12 flex flex-col items-center justify-between md:justify-center text-center z-10 h-[58dvh] md:h-auto py-4 md:py-0 space-y-6 md:space-y-16">
           {/* Header */}
           <div className="space-y-2 xs:space-y-4">
             <div className="text-[10px] md:text-xs lg:text-sm text-[#C9A15D] font-mono tracking-[0.25em] uppercase">
@@ -480,7 +515,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         className="absolute inset-0 w-full h-full flex items-center justify-center"
         style={{ pointerEvents: activeFrame === 3 ? 'auto' : 'none' }}
       >
-        <div className="w-full max-w-5xl mx-auto px-6 md:px-12 flex flex-col md:flex-row items-center justify-between gap-6 md:gap-12 lg:gap-20">
+        <div className="w-full max-w-5xl mx-auto px-6 md:px-12 flex flex-col md:flex-row items-center justify-between gap-6 md:gap-12 lg:gap-20 h-[68dvh] md:h-auto py-4 md:py-0">
           {/* Left Header info */}
           <div className="w-full md:w-5/12 text-left space-y-2 md:space-y-4">
             <div className="text-[10px] md:text-xs lg:text-sm text-[#00E5FF] font-mono tracking-[0.25em] uppercase">转变过程 / THE TRANSITION</div>
@@ -557,7 +592,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         className="absolute inset-0 w-full h-full flex items-center justify-center"
         style={{ pointerEvents: activeFrame === 4 ? 'auto' : 'none' }}
       >
-        <div className="w-full max-w-5xl mx-auto px-6 md:px-12 flex flex-col justify-center gap-4 sm:gap-8">
+        <div className="w-full max-w-5xl mx-auto px-6 md:px-12 flex flex-col justify-between md:justify-center gap-4 sm:gap-8 h-[65dvh] md:h-auto py-4 md:py-0">
           {/* Header info */}
           <div className="text-left max-w-xl">
             <div className="text-[10px] md:text-xs lg:text-sm text-[#00FF9D] font-mono tracking-[0.25em] uppercase mb-2">学习矩阵 / METHODOLOGY</div>
@@ -640,51 +675,45 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         variants={panelVariants}
         initial="hiddenEnter"
         animate={getPanelState(5)}
-        className="absolute inset-0 w-full h-full flex flex-col justify-center items-center"
+        className="absolute inset-0 w-full h-full flex items-center justify-center"
         style={{ pointerEvents: activeFrame === 5 ? 'auto' : 'none' }}
       >
-        {/* The Loop Typography */}
-        <motion.div 
-          initial={{ opacity: 0, y: 25 }}
-          animate={{ opacity: activeFrame === 5 ? 1 : 0, y: activeFrame === 5 ? 0 : 25 }}
-          transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-          className="space-y-4 xs:space-y-6 max-w-3xl px-6 md:px-12 text-center"
-        >
-          <div className="text-[10px] md:text-xs lg:text-sm text-[#C9A15D] font-mono tracking-[0.25em] uppercase">成长闭环 / THE CORE CYCLE</div>
-          <h2 className="text-xl xs:text-2xl md:text-5xl font-display font-semibold leading-tight text-text-primary tracking-tight">
-            练习 → 自动捕捉错误 → 温习强化 → 带回对话继续用
-          </h2>
-          <p className="text-xs md:text-sm lg:text-base text-text-secondary leading-relaxed font-light max-w-2xl mx-auto">
-            Learniny 不是简单的刷题册，而是一套自我进化学习的精密闭环。您说出的每一句话都是画像的养料，在“对话-诊断-纠错-复用”的闭环中周而复始，英语直觉螺旋上升。
-          </p>
-        </motion.div>
-
-        {/* Ending CTA Link Button */}
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: activeFrame === 5 ? 1 : 0, scale: activeFrame === 5 ? 1 : 0.95 }}
-          transition={{ duration: 0.8, delay: 0.45, ease: [0.16, 1, 0.3, 1] }}
-          className="mt-6 xs:mt-12 lg:mt-16 flex flex-col items-center gap-4 sm:gap-6"
-        >
-          <button
-            onClick={onStartChat}
-            className="group relative inline-flex items-center gap-3.5 text-xs xs:text-sm md:text-base font-mono tracking-wider text-brand-accent font-bold cursor-pointer transition-all duration-300 pointer-events-auto"
+        <div className="w-full max-w-3xl mx-auto px-6 md:px-12 flex flex-col justify-between md:justify-center items-center h-[50dvh] md:h-auto py-4 md:py-0">
+          {/* The Loop Typography */}
+          <motion.div 
+            initial={{ opacity: 0, y: 25 }}
+            animate={{ opacity: activeFrame === 5 ? 1 : 0, y: activeFrame === 5 ? 0 : 25 }}
+            transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            className="space-y-4 xs:space-y-6 text-center"
           >
-            <span>立即开启对话 / START CHAT</span>
-            <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-brand-accent/10 border border-brand-accent/30 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:bg-brand-accent group-hover:text-black">
-              <span className="text-sm transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-0.5 group-hover:scale-110">→</span>
-            </span>
-            <span className="absolute bottom-[-6px] left-0 w-0 h-[1.5px] bg-brand-accent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:w-full" />
-          </button>
+            <div className="text-[10px] md:text-xs lg:text-sm text-[#C9A15D] font-mono tracking-[0.25em] uppercase">成长闭环 / THE CORE CYCLE</div>
+            <h2 className="text-xl xs:text-2xl md:text-5xl font-display font-semibold leading-tight text-text-primary tracking-tight">
+              练习 → 自动捕捉错误 → 温习强化 → 带回对话继续用
+            </h2>
+            <p className="text-xs md:text-sm lg:text-base text-text-secondary leading-relaxed font-light max-w-2xl mx-auto">
+              Learniny 不是简单的刷题册，而是一套自我进化学习的精密闭环。您说出的每一句话都是画像的养料，在“对话-诊断-纠错-复用”的闭环中周而复始，英语直觉螺旋上升。
+            </p>
+          </motion.div>
 
-          {/* Mobile and Desktop integrated particle warning */}
-          <div className="opacity-50 hover:opacity-100 transition-opacity flex flex-col items-center gap-2 pointer-events-auto">
-            <LiteModeToggle />
-            <span className="text-[9px] md:text-[11px] text-text-secondary/40 font-mono text-center">
-              提示：手机端为降低能耗，建议不要开启粒子特效
-            </span>
-          </div>
-        </motion.div>
+          {/* Ending CTA Link Button */}
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: activeFrame === 5 ? 1 : 0, scale: activeFrame === 5 ? 1 : 0.95 }}
+            transition={{ duration: 0.8, delay: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            className="mt-6 xs:mt-12 lg:mt-16 flex flex-col items-center gap-4 sm:gap-6"
+          >
+            <button
+              onClick={onStartChat}
+              className="group relative inline-flex items-center gap-3.5 text-xs xs:text-sm md:text-base font-mono tracking-wider text-brand-accent font-bold cursor-pointer transition-all duration-300 pointer-events-auto"
+            >
+              <span>立即开启对话 / START CHAT</span>
+              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-brand-accent/10 border border-brand-accent/30 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:bg-brand-accent group-hover:text-black">
+                <span className="text-sm transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-0.5 group-hover:scale-110">→</span>
+              </span>
+              <span className="absolute bottom-[-6px] left-0 w-0 h-[1.5px] bg-brand-accent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:w-full" />
+            </button>
+          </motion.div>
+        </div>
       </motion.div>
 
     </div>
