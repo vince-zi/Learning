@@ -19,13 +19,13 @@ export function LeftNav() {
     { name: 'home' as const, id: 'section-home', label: '主页' },
     { name: 'practice' as const, id: 'section-practice', label: '对话' },
     { name: 'discovery' as const, id: 'section-discovery', label: '星图' },
-    { name: 'review' as const, id: 'section-review', label: '温习' },
+    { name: 'review' as const, id: 'section-review', label: '足迹' },
     { name: 'profile' as const, id: 'section-profile', label: '能力' },
   ];
 
   const handleNav = (id: string) => {
     const sectionName = id.replace('section-', '') as SectionType;
-    setActiveSection(sectionName);
+    setActiveSection(sectionName as any);
   };
 
   const handleScroll = (direction: 'up' | 'down') => {
@@ -34,12 +34,16 @@ export function LeftNav() {
     lastScrollTime.current = now;
 
     const currentIndex = SECTIONS.indexOf(activeSection as any);
-    let nextIndex = currentIndex;
+    let nextIndex = 0;
 
-    if (direction === 'down') {
-      nextIndex = (currentIndex + 1) % SECTIONS.length;
+    if (currentIndex !== -1) {
+      if (direction === 'down') {
+        nextIndex = (currentIndex + 1) % SECTIONS.length;
+      } else {
+        nextIndex = (currentIndex - 1 + SECTIONS.length) % SECTIONS.length;
+      }
     } else {
-      nextIndex = (currentIndex - 1 + SECTIONS.length) % SECTIONS.length;
+      nextIndex = direction === 'down' ? 0 : SECTIONS.length - 1;
     }
 
     setActiveSection(SECTIONS[nextIndex]);

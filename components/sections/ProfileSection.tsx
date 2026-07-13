@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Target, Activity, Zap, Clipboard, Check, Sparkles, AlertCircle, MessageSquare, Send, ChevronDown, KeyRound, UserRound, Unlock } from 'lucide-react';
+import { Target, Activity, Zap, Clipboard, Check, Sparkles, AlertCircle, MessageSquare, Send, ChevronDown, KeyRound, UserRound, Unlock, BookOpen, ChevronRight } from 'lucide-react';
 import { supabase } from '@/lib/db/supabase-client';
 import { useSessionStore } from '@/store/session-store';
 import { getUserId, setUserId } from '@/lib/user-id';
@@ -27,7 +27,7 @@ function getFriendlyErrorName(type: string): string {
 }
 
 export function ProfileSection() {
-  const { activeSection } = useSessionStore();
+  const { activeSection, setActiveSection } = useSessionStore();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
   const [focusDays, setFocusDays] = useState(0);
@@ -127,9 +127,9 @@ export function ProfileSection() {
             weaknessesList = Object.entries(counts)
               .sort((a, b) => b[1] - a[1])
               .slice(0, 2)
-              .map(([type]) => `练习中经常出现「${getFriendlyErrorName(type)}」类语法错误`);
+              .map(([type]) => `建议可以多在对话中重组「${getFriendlyErrorName(type)}」表达`);
           } else {
-            weaknessesList = ['暂无明显薄弱环节，继续加油！'];
+            weaknessesList = ['所有表达自然顺畅，星河璀璨！'];
           }
         }
 
@@ -143,9 +143,9 @@ export function ProfileSection() {
             .eq('noted_by_user', true);
           if (solvedErrors && solvedErrors.length > 0) {
             const solvedTypes = Array.from(new Set(solvedErrors.map(e => getFriendlyErrorName(e.error_type))));
-            strengthsList = solvedTypes.slice(0, 2).map(type => `成功掌握「${type}」的语法运用`);
+            strengthsList = solvedTypes.slice(0, 2).map(type => `已自然化用「${type}」的地道表达`);
           } else {
-            strengthsList = ['具备基础英语交流和句型表达能力'];
+            strengthsList = ['具备优秀的自然英语交流与句型表达本能'];
           }
         }
 
@@ -230,11 +230,11 @@ export function ProfileSection() {
     const pointsStr = grammarPoints.join('、');
     const weaknessesStr = profile.weaknesses.map((w: string, i: number) => `  ${i + 1}. ${w}`).join('\n');
     
-    return `这是我的英语水平和练习记录，接下来请根据这个跟我练习口语：
+    return `这是我的英语口语表现与探索记录，接下来请根据这个跟我练习口语：
 
-- 英语水平 (CEFR)：${profile.cefr_level} (预估词汇量: ${profile.known_vocabulary_size})
-- 本周练习语法点：${pointsStr}
-- 薄弱环节：
+- 口语境界 (CEFR)：${profile.cefr_level} (预估词汇量: ${profile.known_vocabulary_size})
+- 本周化用表达点：${pointsStr}
+- 建议重组的表达习惯：
 ${weaknessesStr}`;
   };
 
@@ -347,8 +347,8 @@ ${weaknessesStr}`;
         >
           <div className="bg-[#0D0D0D] border border-[#1A1A1A] rounded-3xl p-5 md:p-8 shadow-sm flex-1 flex flex-col justify-between">
             <div>
-              <h2 className="text-xl md:text-3xl font-display uppercase tracking-wider mb-1 md:mb-2 text-[#FFFFFF]">能力评估</h2>
-              <p className="text-[10px] md:text-sm text-[#888888] font-mono tracking-widest uppercase mb-4 md:mb-8">隐式直觉</p>
+              <h2 className="text-xl md:text-3xl font-display uppercase tracking-wider mb-1 md:mb-2 text-[#FFFFFF]">我的语言画像</h2>
+              <p className="text-[10px] md:text-sm text-[#888888] font-mono tracking-widest uppercase mb-4 md:mb-8">表达直觉</p>
               
               <div className="space-y-4 md:space-y-6">
                 <div>
@@ -399,12 +399,25 @@ ${weaknessesStr}`;
 
               {profile?.strengths && profile.strengths.length > 0 && (
                 <div className="mt-5 pt-4 md:mt-8 md:pt-6 border-t border-[#1A1A1A]">
-                  <h4 className="text-[10px] font-mono tracking-widest text-[#00FF9D] uppercase mb-2 md:mb-3">我的强项 / Strengths</h4>
+                  <h4 className="text-[10px] font-mono tracking-widest text-[#00FF9D] uppercase mb-2 md:mb-3">流光星域 / Flowing Patterns</h4>
                   <ul className="space-y-2 text-xs text-[#888888] font-normal leading-relaxed">
                     {profile.strengths.slice(0, 3).map((s: string, idx: number) => (
                       <li key={idx} className="flex items-start gap-2">
                         <span className="text-[#00FF9D] font-bold mt-0.5">•</span>
                         <span>{s}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {profile?.weaknesses && profile.weaknesses.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-[#1A1A1A]">
+                  <h4 className="text-[10px] font-mono tracking-widest text-[#FF3366] uppercase mb-2 md:mb-3">成长星宿 / Growing Patterns</h4>
+                  <ul className="space-y-2 text-xs text-[#888888] font-normal leading-relaxed">
+                    {profile.weaknesses.slice(0, 3).map((w: string, idx: number) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <span className="text-[#FF3366] font-bold mt-0.5">•</span>
+                        <span>{w}</span>
                       </li>
                     ))}
                   </ul>
@@ -416,7 +429,7 @@ ${weaknessesStr}`;
               <div className="flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 text-[#888888] mt-0.5 flex-shrink-0" />
                 <p className="text-[10px] md:text-[11px] leading-normal text-[#666666]">
-                  基于你在 Learniny 的口语实战对话和语法纠错记录实时计算。多开启对话可以提高评估精度。
+                  星盘轨迹基于你的每一次真实对话实时流转。多和 AI 朋友聊聊天，星图会愈发清晰。
                 </p>
               </div>
 
@@ -510,7 +523,7 @@ ${weaknessesStr}`;
             >
               <Target className="w-6 h-6 text-[#00E5FF] mb-3" />
               <span className="text-2xl font-mono mb-1 text-[#FFFFFF] font-bold">{focusDays}</span>
-              <span className="text-[10px] font-mono tracking-widest text-[#888888] uppercase">专注天数</span>
+              <span className="text-[10px] font-mono tracking-widest text-[#888888] uppercase">同行天数</span>
             </motion.div>
             
             <motion.div 
@@ -533,9 +546,29 @@ ${weaknessesStr}`;
               <div className="absolute inset-0 bg-[#00FF9D]/5" />
               <Zap className="w-6 h-6 text-[#00FF9D] mb-3 relative z-10" />
               <span className="text-2xl font-mono mb-1 text-[#FFFFFF] font-bold relative z-10">{profile?.cefr_level || 'A1'}</span>
-              <span className="text-[10px] font-mono tracking-widest text-[#00FF9D] relative z-10 uppercase">CEFR 评级</span>
+              <span className="text-[10px] font-mono tracking-widest text-[#00FF9D] relative z-10 uppercase">口语境界</span>
             </motion.div>
           </div>
+
+          {/* 学习进度入口卡片 */}
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.45 }}
+            onClick={() => setActiveSection('review')}
+            className="bg-[#0D0D0D] border border-[#1A1A1A] hover:border-[#00FF9D]/30 p-6 rounded-3xl flex items-center justify-between shadow-sm cursor-pointer group transition-all duration-300 pointer-events-auto"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#00FF9D]/10 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                <BookOpen className="w-6 h-6 text-[#00FF9D]" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-[#FFFFFF] group-hover:text-[#00FF9D] transition-colors">我的学习进度</h3>
+                <p className="text-xs text-[#888888] mt-1">查看这周积累与自然用到的新表达</p>
+              </div>
+            </div>
+            <ChevronRight className="w-5 h-5 text-[#666666] group-hover:text-[#00FF9D] group-hover:translate-x-1 transition-all" />
+          </motion.div>
 
           {/* 学习画像报告大卡片 */}
           <motion.div 

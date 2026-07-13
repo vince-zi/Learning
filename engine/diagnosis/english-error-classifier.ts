@@ -199,16 +199,23 @@ export function diagnoseEnglishResponse(
 
   let correctionType: EnglishDiagnosisResult['correctionType'] = undefined
   if (needsCorrection) {
-    // 选择纠错策略：优先 recast，除非用户反复犯同样的错误
-    const majorErrors = errorsInResponse.filter(e => e.severity === 'major')
-    const hasRepeatedError = checkRepeatedErrors(errorsInResponse, learnerProfile)
+    // 根据 MTM 原则，recast 是默认首选策略，使用比例要大幅提高
+    correctionType = 'recast'
 
-    if (hasRepeatedError && errorsInResponse.length >= 2) {
-      correctionType = 'metalinguistic_hint'
-    } else if (errorsInResponse.some(e => e.severity === 'major')) {
-      correctionType = 'clarification_request'
-    } else {
-      correctionType = 'recast'
+    // 只有当同一个错误（类型相同）在历史记录里已经出现多次（比如 frequency >= 3），且本轮错误确实存在时，才升级策略
+    if (learnerProfile?.errorPatterns) {
+      const repeatedHighFreqErrors = errorsInResponse.filter(e => {
+        const pattern = learnerProfile.errorPatterns?.find(p => p.type === e.errorType)
+        return pattern && pattern.frequency >= 3
+      })
+
+      if (repeatedHighFreqErrors.length > 0) {
+        if (repeatedHighFreqErrors.some(e => e.severity === 'major')) {
+          correctionType = 'clarification_request'
+        } else {
+          correctionType = 'metalinguistic_hint'
+        }
+      }
     }
   }
 

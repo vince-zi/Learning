@@ -346,7 +346,11 @@ export function PracticeSection() {
     fetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ module: 'english', theme: 'Free Conversation' })
+      body: JSON.stringify({
+        module: 'english',
+        theme: 'Free Conversation',
+        userId: getUserId() || undefined,  // 传入已登录用户的真实 ID
+      })
     })
       .then(res => res.json())
       .then(data => {
@@ -356,8 +360,11 @@ export function PracticeSection() {
           useSessionStore.getState().setActiveChatSessionId(sessId);
           setSession(data.session);
           useSessionStore.getState().setMessages([]);
-          // Save backend-generated userId for subsequent requests
-          if (data.session.userId && data.session.userId !== 'mock_user') {
+          // 只有当 localStorage 里没有真实用户 ID 时，才用后端返回的 userId
+          // 避免把已登录用户的 user_* ID 被 anon_* 覆盖
+          const existingId = getUserId();
+          if ((!existingId || existingId.startsWith('anon_')) &&
+              data.session.userId && data.session.userId !== 'mock_user') {
             setUserId(data.session.userId);
           }
         }

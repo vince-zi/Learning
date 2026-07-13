@@ -203,7 +203,7 @@ export async function POST(request: Request) {
         .select('*')
         .eq('session_id', sessionId)
         .order('created_at', { ascending: true })
-        .limit(100)
+        .limit(100),
     ])
 
     const { data: sessionData, error: sessionErr } = sessionRes
@@ -212,6 +212,15 @@ export async function POST(request: Request) {
     if (sessionErr || !sessionData) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
     }
+
+    // 使用 session 的 user_id（来自 DB，比前端传来的 userId 更可靠）查询用户昵称
+    // 避免 effectiveUserId 在 localStorage 清空时变成 anon_* 导致查不到昵称
+    const nicknameUserId = sessionData.user_id || effectiveUserId
+    const userRes = nicknameUserId
+      ? await supabase.from('users').select('nickname').eq('id', nicknameUserId).single()
+      : null
+    const userNickname: string | null = userRes?.data?.nickname || null
+    console.log('[userNickname lookup]', { nicknameUserId, userNickname })
 
     const sessionModule = sessionData.module || module || 'photography'
     const sessionTheme = sessionData.theme || ''
@@ -446,29 +455,22 @@ You must act as a Gentle Guide. Use encouraging, patient, and warm tones. Use in
         systemPromptForThisRequest = systemPromptForThisRequest
           .replace(
             /1\. \*\*English-First with Chinese Help When Needed[\s\S]*?(?=\n2\. \*\*)/,
-            `1. **中英双语 — 中文讲解为主**：
-   - 英文进行对话和提问，但语法讲解、纠正、教学点**必须用中文**详细解释。
-   - 遇到复杂词汇或长句时**必须在后面加括号提供中文翻译**。例如："He spilled the beans (泄露了秘密)。"
-   - 中文讲解使用"小白大白话"——用生活化类比来解释语法，严禁学术术语。
-   - 每条讲解回复至少要有 25% 是中文。`
+            `1. **中英双语 — 中文讲解**：
+   - 英文进行对话和提问，但所有的语法错误讲解与中文注解必须收拢到末尾的 [HINT:] 标签中，绝不在对话文本的主体中（包括括号内）给语法错误写任何中文注解。
+   - 遇到复杂词汇或长句时可以在后面加括号提供中文翻译（例如："He spilled the beans (泄露了秘密)。"）。`
           )
           .replace(
             /2\. \*\*Clear Grammar Explanations[\s\S]*?(?=\n3\. \*\*)/,
-            `2. **语法讲解 — 中文大白话（禁止反问）**：
-   - 如果用户提问语法或处于纠错中，**必须立即用中文给出直接、清晰的讲解**，绝对不能反问用户。
-   - **小白大白话教学**：用最生动日常的中文类比解释，严禁学术语法名词。
-   - -ing：表示"正在做"或"把动作当成一件事情/爱好"。
-   - the：特指那个你我都知道的特定东西。that：指着/区分的那一个。
-   - to do：倾向于未来（想去跑），doing：正在做或指整个动作本身。
-   - 每个语法纠正必须用中文解释，不止英文。`
+            `2. **语法讲解收拢**：
+   - 绝对禁止在对话主体的英文句子中（包括任何括号）进行直接的语法讲授或中文提示。所有的语法纠正解释必须写在末尾的 [HINT:] 标签里。`
           )
           .replace(
-            /4\. \*\*温和纠错[\s\S]*?(?=\n5\. \*\*)/,
-            `4. **温和纠错（Recast + 中文解释 — 必须）**：
-   当用户犯错时，不要直接说"That's wrong"。在回复中自然重复正确形式，**必须**用括号加中文解释。
-   每个纠正都要有中文解释——不止是英文。例如：
+            /4\. \*\*[\s\S]*?(?=\n5\. \*\*)/,
+            `4. **温和纠错（纯 Recast）**：
+   - 当用户犯错时，绝对不要说 "That's wrong" 或在英文对话中插播语法说明。在回复中自然重复正确形式（Recast）即可。所有的语法点病因分析与改正规则讲解，必须全部放到 [HINT:] 标签中。例如：
    - 用户："I go to the store yesterday."
-   - 你："Oh, you went (went是go的过去式，昨天的事→用过去式 went) to the store yesterday! What did you buy? 🛒"`
+   - 你的回复主体："Oh, you went to the store yesterday! What did you buy? 🛒"（不带任何括号提示或解释）
+   - 你的回复末尾追加：[CORRECTED: I went to the store yesterday.] [HINT: 昨天的事情要用过去时 went，而不是 go。]`
           )
       } else if (isBalancedPref) {
         // 平衡模式：regex 替换系统提示，必须含中文提示
@@ -477,24 +479,20 @@ You must act as a Gentle Guide. Use encouraging, patient, and warm tones. Use in
             /1\. \*\*English-First with Chinese Help When Needed[\s\S]*?(?=\n2\. \*\*)/,
             `1. **English Conversation + Chinese Grammar Hints (英语对话，中文语法提示)**：
    - Chat and ask questions in English.
-   - When explaining grammar or correcting errors: English explanation first, then a Chinese hint in brackets like (提示：...). This is MANDATORY.
-   - Every grammar correction or teaching point MUST include Chinese brackets. Do not skip them.
-   - For vocabulary: English definition first, then (中文词) in brackets.`
+   - All grammatical explanations and Chinese tips MUST be placed exclusively in the [HINT:] tag at the very end of your response. Do NOT include any grammatical explanations or Chinese tips in the conversation body or in any brackets within the conversation text. All dialogue body text must be pure natural conversation.`
           )
           .replace(
             /2\. \*\*Clear Grammar Explanations[\s\S]*?(?=\n3\. \*\*)/,
-            `2. **Grammar Teaching — Chinese Hint Required (语法教学要求)**：
-   - When teaching grammar: simple English first, then (提示：中文解释) in brackets. REQUIRED, not optional.
-   - Use everyday analogies. No academic grammar terms.
-   - Every grammar correction MUST end with a Chinese bracket hint — even for simple corrections add at least a short one.`
+            `2. **Grammar Teaching — Chinese Hint in End Tags**：
+   - All grammar teaching, correction details, and structural explanations must be put in the [HINT:] tag at the end of the response. No direct grammar lectures in the dialogue body.`
           )
           .replace(
-            /4\. \*\*温和纠错[\s\S]*?(?=\n5\. \*\*)/,
-            `4. **Correction with Chinese Hint (纠错+提示)**：Repeat the correct form naturally, then add Chinese hint: (注意：...). Example:
-   - User: "I go to the store yesterday."
-   - You: "Oh, you went (注意：yesterday是过去时间 → 用过去式 went) to the store yesterday! What did you buy? 🛒"`
+            /4\. \*\*[\s\S]*?(?=\n5\. \*\*)/,
+            `4. **Correction with Recast (纠错)**：
+   - Repeat the correct form naturally in the dialogue body. Do NOT add any inline explanation or Chinese tip like (提示：...) in the dialogue text. All explanations must be placed exclusively in the [HINT:] tag at the end.`
           )
-      } else if (isEnglishPref) {
+      }
+ else if (isEnglishPref) {
         // 英语模式：追加硬覆盖 Prompt，不依赖脆弱的 regex 去匹配系统提示文本
         explanationPrefPrompt = `\n\n## LANGUAGE PREFERENCE: ENGLISH IMMERSION (纯英沉浸 — 强制覆盖)
 [本指令优先级最高 — 覆盖之前 ALL 语言相关指令，包括系统提示中的任何中文相关要求]:
@@ -801,11 +799,173 @@ Ask only one challenge. Keep it encouraging.${showChooseLangHint ? '\n\n⚠️ I
             ? `\n\n${levelPrompt}${lastSessionTopicHint ? `\n\n【⚠️ 避坑指南 - 绝对禁止重复上一个话题】：\n用户在刚刚结束的上一个对话里，已经和你聊过以下话题或开场白：\n"${lastSessionTopicHint}"\n请你绝对不要在本次首发破冰中再次提及或触碰类似的主题（比如上局刚问了咖啡/饮品/食物/早餐等，这一局就必须严禁聊任何与食物饮品有关的内容，强制选择昨日经历、今日天气、起居规律等其他完全不同的话题）！` : ''}\n\n请你极其严格地扮演符合该等级能力的英语对话伙伴，每次只问一个问题。`
             : ''
 
-          actionPrompt = `用户刚刚开始了英语学习对话。请你用英语和他们聊天，像朋友一样。
+          if (userMessage === '[INIT_FREE_CONVERSATION]') {
+            const topics = [
+              { id: 'hobbies', name: 'Hobbies & Free-time activities (what they do on weekends)' },
+              { id: 'movies', name: 'Entertainment (movies, books, music)' },
+              { id: 'travel', name: 'Travel & Places (favorite cities, vacation plans)' },
+              { id: 'sports', name: 'Sports & Outdoors (hiking, basketball, working out)' },
+              { id: 'pets', name: 'Pets & Animals (dogs, cats)' },
+              { id: 'weather', name: 'Weather & Seasons (current weather, favorite season)' },
+              { id: 'routines', name: 'Daily routines (morning routines, habits)' },
+              { id: 'goals', name: 'Future plans or goals' },
+              { id: 'food', name: 'Food, drinks, or favorite restaurants' }
+            ]
+            
+            const hasFoodContext = /coffee|sugar|food|eat|drink|dinner|lunch|breakfast|restaurant|cafe/i.test(userContextPrompt)
+            const availableTopics = hasFoodContext ? topics.filter(t => t.id !== 'food') : topics
+            
+            let hash = 0
+            for (let i = 0; i < sessionId.length; i++) {
+              hash = sessionId.charCodeAt(i) + ((hash << 5) - hash)
+            }
+            const selectedTopic = availableTopics[Math.abs(hash) % availableTopics.length]
+            
+            let determinedLevel = 'A1-A2'
+            if (globalNodeErrors && globalNodeErrors.length > 0) {
+              const hasComplexErrors = globalNodeErrors.some(e => 
+                e.error_type === 'clause-error' || 
+                e.error_type === 'preposition-collocation' || 
+                e.error_type === 'vocabulary-misuse'
+              )
+              if (globalNodeErrors.length > 8 || hasComplexErrors) {
+                determinedLevel = 'B1-B2'
+              }
+              const hasAdvancedErrors = globalNodeErrors.some(e => e.severity === 'advanced' || e.error_type === 'style-register')
+              if (hasAdvancedErrors) {
+                determinedLevel = 'C1-C2'
+              }
+            }
+
+            if (globalNodeDiscoveries && globalNodeDiscoveries.length > 0) {
+              const hasMidNode = globalNodeDiscoveries.some(d => 
+                d.knowledge_node_id === 'opinion-expression' || 
+                d.knowledge_node_id === 'comparing-discussing' || 
+                d.knowledge_node_id === 'storytelling'
+              )
+              const hasHighNode = globalNodeDiscoveries.some(d => d.knowledge_node_id === 'abstract-thinking')
+              if (hasHighNode) {
+                determinedLevel = 'C1-C2'
+              } else if (hasMidNode && determinedLevel === 'A1-A2') {
+                determinedLevel = 'B1-B2'
+              }
+            }
+
+            let levelHint = ''
+            if (determinedLevel === 'A1-A2') {
+              levelHint = `\n- Since the user's level is entry (A1-A2), keep your sentence structure and vocabulary extremely simple (CEFR A2 max).`
+            } else if (determinedLevel === 'B1-B2') {
+              levelHint = `\n- Adjust vocabulary and complexity to B1-B2 level.`
+            } else {
+              levelHint = `\n- Adjust vocabulary and complexity to C1-C2 level.`
+            }
+            
+            actionPrompt = `You are starting a Free Conversation session with the user.
+Please choose a fresh, engaging, and friendly starter topic to kick off the conversation.
+You MUST choose this specific topic: "${selectedTopic.name}".
+
+Greeting prompt guidelines based on the "context_summary" in COACHING_CONTEXT:
+- If context_summary is null/empty (New User):
+  * Introduce yourself briefly as their English partner (remember to state we are doing Free Conversation).
+  * ${userNickname ? `Greet the user by their nickname "${userNickname}" (e.g. "Hi ${userNickname}!"). Do NOT ask for their name.` : 'Ask for their name.'}
+  * DO NOT use pre-established greeting like "how is your day today" or assume you already know them.
+  * Connect naturally to the starter topic in 2-3 sentences.
+- If context_summary has content (Returning User):
+  * Greet them warmly like an old friend who remembers them${userNickname ? `, using their nickname "${userNickname}"` : ''}.
+  * Naturally refer to a past scenario, weakness, or topic (as detailed in context_summary), but make it sound conversational (e.g., "I was thinking about our chat on..." or "Last time we talked about...").
+  * DO NOT use system-like phrases like "according to your records" or "based on your profile".
+  * Keep it concise (at most 2-3 sentences).
+
+- Ask exactly ONE friendly question about this topic to start the chat.
+- If the topic is not about food, DO NOT mention coffee, sugar, Americano, or food. Keep it completely fresh! ${levelHint}`
+          } else {
+            if (userMessage === '[INIT_FREE_CONVERSATION]') {
+            const topics = [
+              { id: 'hobbies', name: 'Hobbies & Free-time activities (what they do on weekends)' },
+              { id: 'movies', name: 'Entertainment (movies, books, music)' },
+              { id: 'travel', name: 'Travel & Places (favorite cities, vacation plans)' },
+              { id: 'sports', name: 'Sports & Outdoors (hiking, basketball, working out)' },
+              { id: 'pets', name: 'Pets & Animals (dogs, cats)' },
+              { id: 'weather', name: 'Weather & Seasons (current weather, favorite season)' },
+              { id: 'routines', name: 'Daily routines (morning routines, habits)' },
+              { id: 'goals', name: 'Future plans or goals' },
+              { id: 'food', name: 'Food, drinks, or favorite restaurants' }
+            ]
+            
+            const hasFoodContext = /coffee|sugar|food|eat|drink|dinner|lunch|breakfast|restaurant|cafe/i.test(userContextPrompt)
+            const availableTopics = hasFoodContext ? topics.filter(t => t.id !== 'food') : topics
+            
+            let hash = 0
+            for (let i = 0; i < sessionId.length; i++) {
+              hash = sessionId.charCodeAt(i) + ((hash << 5) - hash)
+            }
+            const selectedTopic = availableTopics[Math.abs(hash) % availableTopics.length]
+            
+            let determinedLevel = 'A1-A2'
+            if (globalNodeErrors && globalNodeErrors.length > 0) {
+              const hasComplexErrors = globalNodeErrors.some(e => 
+                e.error_type === 'clause-error' || 
+                e.error_type === 'preposition-collocation' || 
+                e.error_type === 'vocabulary-misuse'
+              )
+              if (globalNodeErrors.length > 8 || hasComplexErrors) {
+                determinedLevel = 'B1-B2'
+              }
+              const hasAdvancedErrors = globalNodeErrors.some(e => e.severity === 'advanced' || e.error_type === 'style-register')
+              if (hasAdvancedErrors) {
+                determinedLevel = 'C1-C2'
+              }
+            }
+
+            if (globalNodeDiscoveries && globalNodeDiscoveries.length > 0) {
+              const hasMidNode = globalNodeDiscoveries.some(d => 
+                d.knowledge_node_id === 'opinion-expression' || 
+                d.knowledge_node_id === 'comparing-discussing' || 
+                d.knowledge_node_id === 'storytelling'
+              )
+              const hasHighNode = globalNodeDiscoveries.some(d => d.knowledge_node_id === 'abstract-thinking')
+              if (hasHighNode) {
+                determinedLevel = 'C1-C2'
+              } else if (hasMidNode && determinedLevel === 'A1-A2') {
+                determinedLevel = 'B1-B2'
+              }
+            }
+
+            let levelHint = ''
+            if (determinedLevel === 'A1-A2') {
+              levelHint = `\n- Since the user's level is entry (A1-A2), keep your sentence structure and vocabulary extremely simple (CEFR A2 max).`
+            } else if (determinedLevel === 'B1-B2') {
+              levelHint = `\n- Adjust vocabulary and complexity to B1-B2 level.`
+            } else {
+              levelHint = `\n- Adjust vocabulary and complexity to C1-C2 level.`
+            }
+            
+            actionPrompt = `You are starting a Free Conversation session with the user.
+Please choose a fresh, engaging, and friendly starter topic to kick off the conversation.
+You MUST choose this specific topic: "${selectedTopic.name}".
+
+Greeting prompt guidelines based on the "context_summary" in COACHING_CONTEXT:
+- If context_summary is null/empty (New User):
+  * Introduce yourself briefly as their English partner (remember to state we are doing Free Conversation).
+  * ${userNickname ? `Greet the user by their nickname "${userNickname}" (e.g. "Hi ${userNickname}!"). Do NOT ask for their name.` : 'Ask for their name.'}
+  * DO NOT use pre-established greeting like "how is your day today" or assume you already know them.
+  * Connect naturally to the starter topic in 2-3 sentences.
+- If context_summary has content (Returning User):
+  * Greet them warmly like an old friend who remembers them${userNickname ? `, using their nickname "${userNickname}"` : ''}.
+  * Naturally refer to a past scenario, weakness, or topic (as detailed in context_summary), but make it sound conversational (e.g., "I was thinking about our chat on..." or "Last time we talked about...").
+  * DO NOT use system-like phrases like "according to your records" or "based on your profile".
+  * Keep it concise (at most 2-3 sentences).
+
+- Ask exactly ONE friendly question about this topic to start the chat.
+- If the topic is not about food, DO NOT mention coffee, sugar, Americano, or food. Keep it completely fresh! ${levelHint}`
+          } else {
+            actionPrompt = `用户刚刚开始了英语学习对话。请你用英语和他们聊天，像朋友一样。
 目的引导用户用英语多表达。从用户的消息出发，问一个相关的问题让他们继续说下去。
 如果用户的消息很短，问一个开放式问题让他们展开。如果用户已经说了一些内容，追问更多细节。
 每次只问一个问题。用自然的、口语化的英语。
 如果用户的表达中有语法或词汇错误，不要直接指出来——用 recast（隐性纠错），在你的回复中自然地使用正确的形式。${errorHintFirst}${memoryBasedTopicPrompt}`
+          }
+          }
         }
       } else {
         // 第一条消息：摄影模式-无图片，直接提问进行话题讨论
@@ -818,12 +978,35 @@ Ask only one challenge. Keep it encouraging.${showChooseLangHint ? '\n\n⚠️ I
       const correctedInstruction = /[a-zA-Z]{3,}/.test(userMessage)
         ? `\n⚠️ IMPORTANT: You MUST append exactly "[CORRECTED: <the fully corrected version of the user's sentence>]" at the very end of your response.`
         : ''
+      const correctionStrategy = (englishDiag && englishDiag.errorsInResponse.length > 0) ? (englishDiag.correctionType || 'recast') : 'recast'
+      // Compute specific corrected forms for each error to guide recast
+      const recastExamples = englishDiag && englishDiag.errorsInResponse.length > 0
+        ? englishDiag.errorsInResponse
+            .map((e: any) => {
+              const fix = computeTargetFix(e)
+              if (fix && e.originalText) {
+                return `"${e.originalText}" → "${fix}"`
+              }
+              return null
+            })
+            .filter(Boolean)
+            .join('; ')
+        : ''
+      const recastHint = recastExamples
+        ? ` REQUIRED CORRECTIONS TO USE IN REPLY BODY: ${recastExamples}. You MUST use the corrected form (not the user's original form) when restating their statement.`
+        : ''
+      const strategyInstruction = correctionStrategy === 'recast'
+        ? `Strategy: recast (silent reformulation). You MUST first acknowledge the user's statement by naturally restating/repeating it in the CORRECT form in your conversation response body before asking any follow-up question.${recastHint} Do NOT explain the rule, do NOT explain why, do NOT contrast the error, and do NOT say "we say X instead of Y" in the conversation body. Keep the conversation text 100% natural dialogue.`
+        : correctionStrategy === 'metalinguistic_hint'
+        ? 'Strategy: metalinguistic_hint. Give a short, helpful explanation of the grammar rule.'
+        : 'Strategy: clarification_request. Ask the user to clarify what they meant.'
+
       const errorHint = (englishDiag && englishDiag.errorsInResponse.length > 0
         ? (isEnglishPref
-          ? `\nPotential language issues in the user's recent response: ${englishDiag.errorsInResponse.map(e => `${e.errorType}(${e.severity})`).join(', ')}. Strategy: ${englishDiag.correctionType || 'recast'}. Use recast (naturally repeat the correct form in your reply) to correct. If the same error has appeared multiple times, give a short meta-linguistic hint in English.`
+          ? `\nPotential language issues in the user's recent response: ${englishDiag.errorsInResponse.map((e: any) => `${e.errorType}(${e.severity})`).join(', ')}. ${strategyInstruction}`
           : isBalancedPref
-          ? `\nPotential language issues in user's response: ${englishDiag.errorsInResponse.map(e => `${e.errorType}(${e.severity})`).join(', ')}. Strategy: ${englishDiag.correctionType || 'recast'}. Correct via recast. If error persists, add a brief Chinese hint in brackets.`
-          : `\n用户在最近回答中的潜在语言问题：${englishDiag.errorsInResponse.map(e => `${e.errorType}(${e.severity})`).join(', ')}。纠正策略：${englishDiag.correctionType || 'recast'}。使用 recast（在你的回复中自然重复正确形式）来纠正。如果同一错误已出现多次，可以给一个简短的元语言提示。`)
+          ? `\nPotential language issues in user's response: ${englishDiag.errorsInResponse.map((e: any) => `${e.errorType}(${e.severity})`).join(', ')}. ${strategyInstruction}`
+          : `\n用户在最近回答中的潜在语言问题：${englishDiag.errorsInResponse.map((e: any) => `${e.errorType}(${e.severity})`).join(', ')}。${strategyInstruction}`)
         : '') + correctedInstruction
       const levelHint = englishDiag
         ? (isEnglishPref
@@ -1109,13 +1292,20 @@ ${conversationSoFar}
 
     // --- 5.5 结构化后台上下文注入 (已安全隔离，防御提示词注入和数据泄露) ---
     let finalSystemPromptWithContext = finalSystemPrompt;
-    if (isEnglish && englishDiag) {
-      const struct = buildCoachingContext(englishDiag, regulation, targetErrorToReview, sessionHistory, userId)
+    if (isEnglish) {
+      const struct = buildCoachingContext(
+        englishDiag || { errorsInResponse: [] },
+        regulation,
+        targetErrorToReview,
+        sessionHistory,
+        userId,
+        userContextPrompt,
+        userWeaknesses,
+        userNickname
+      )
       console.log('[COACHING_CONTEXT built]', struct)
       // ✅ 安全加固：Context 注入 System Prompt，对用户完全不可见
       finalSystemPromptWithContext += '\n\n## CURRENT COACHING CONTEXT (SYSTEM ONLY - HIDDEN FROM USER):\n' + struct;
-    } else if (isEnglish) {
-      console.log('[COACHING_CONTEXT skipped]', { hasEnglishDiag: !!englishDiag })
     }
     if (actionPrompt) {
       // ✅ 安全加固：系统动作指令也追加至 System 层，杜绝越狱和篡改风险
@@ -1736,10 +1926,13 @@ function buildCoachingContext(
   targetErrorToReview: any,
   sessionHistory: any[],
   userId: string,
+  userContextPrompt?: string,
+  userWeaknesses?: string[],
+  userNickname?: string | null,
 ): string {
-  const firstError = englishDiag.errorsInResponse?.[0]
+  const firstError = englishDiag?.errorsInResponse?.[0]
   const hasError = firstError && englishDiag.errorsInResponse.length > 0
-  const emotional = englishDiag.emotionalState || 'neutral'
+  const emotional = englishDiag?.emotionalState || 'neutral'
 
   // correction_strategy
   let correctionStrategy: string | null = null
@@ -1759,9 +1952,13 @@ function buildCoachingContext(
   let contextSummary: string | null = null
   if (targetErrorToReview) {
     contextSummary = `用户历史错句中存在"${getFriendlyErrorName(targetErrorToReview.error_type || '')}"相关的问题，原始句子："${targetErrorToReview.original_text}"`
+  } else if (userContextPrompt && userContextPrompt.trim().length > 0 && userWeaknesses && userWeaknesses.length > 0) {
+    contextSummary = `用户是老用户。其历史记录包含这些薄弱点：${userWeaknesses.join(', ')}。`
   }
 
   const ctx: any = {
+    userId,
+    user_nickname: userNickname || null,
     correction_strategy: correctionStrategy,
     emotional_signal: emotional === 'frustrated' ? 'frustrated' : (emotional === 'confused' || emotional === 'anxious') ? 'low' : 'neutral',
     zpd_gap: zpdGap,

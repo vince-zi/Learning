@@ -12,7 +12,7 @@ export function BottomNav() {
     { name: '主页', href: '/', icon: Home, exact: true },
     { name: '对话', href: '/practice', icon: MessageSquare },
     { name: '星图', href: '/discovery', icon: Network },
-    { name: '错题', href: '/review', icon: BookOpen },
+    { name: '足迹', href: '/review', icon: BookOpen },
     { name: '我的', href: '/profile', icon: User },
   ];
 

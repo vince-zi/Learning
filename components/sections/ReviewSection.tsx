@@ -208,9 +208,9 @@ function buildFocusGroups(records: any[]) {
 }
 
 const stageInfo = [
-  { label: "未开始", color: tokens.textSecondary },
-  { label: "第一关完成", color: tokens.teal },
-  { label: "已消灭", color: tokens.gold },
+  { label: "已记录", color: tokens.textSecondary },
+  { label: "内化中", color: tokens.teal },
+  { label: "融会贯通", color: tokens.gold },
 ];
 
 function ReviewModal({ record, userId, onClose, onComplete }: { record: any, userId: string, onClose: () => void, onComplete: () => void }) {
@@ -336,7 +336,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, color: tokens.textPrimary }}>
-            温习模式
+            表达润色
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: tokens.textSecondary, cursor: "pointer" }}>
             <X size={18} />
@@ -344,7 +344,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
         </div>
 
         <div style={{ display: "flex", alignItems: "center", marginBottom: 22 }}>
-          {["第一关 · 纠正原句", "第二关 · 新场景重测"].map((label, idx) => (
+          {["第一关 · 润色原句", "第二关 · 场景重组"].map((label, idx) => (
             <React.Fragment key={idx}>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                 <div
@@ -394,7 +394,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
             )}
 
             <div style={{ fontSize: 13, color: tokens.textSecondary, marginBottom: 8 }}>
-              {stage === 0 ? "纠正这句话：" : "新场景 · 请用正确表达回答："}
+              {stage === 0 ? "试着润色这句话：" : "场景重组 · 请在全新的场景下自然使用："}
             </div>
             <div
               style={{
@@ -431,7 +431,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>
-                    <span style={{ color: tokens.teal, fontWeight: 600, marginRight: 4 }}>语法提示</span>
+                    <span style={{ color: tokens.teal, fontWeight: 600, marginRight: 4 }}>语言灵感</span>
                     {record.explanation}
                   </span>
                   <button
@@ -485,7 +485,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
                 fontSize: 13,
                 lineHeight: 1.5,
               }}>
-                <span style={{ fontWeight: 'bold', color: tokens.coral }}>❌ 答错啦，请根据提示修改：</span>
+                <span style={{ fontWeight: 'bold', color: tokens.coral }}>🌱 还可以说得更地道，试着调整一下：</span>
                 <div style={{ marginTop: 8 }}>{renderFormattedText(aiFeedback)}</div>
               </div>
             )}
@@ -510,7 +510,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
               key={stage === 0 ? "stage-0-input" : "stage-1-input"}
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
-              placeholder={stage === 0 ? "输入修改后的正确句子..." : "输入你在新场景下的回答..."}
+              placeholder={stage === 0 ? "输入润色后的更地道句子..." : "在全新场景中自然作答..."}
               autoComplete="off"
               autoCapitalize="off"
               autoCorrect="off"
@@ -555,7 +555,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
               }}
             >
               {isLoading && <Loader2 size={16} className="animate-spin" />}
-              {stage === 0 ? "提交，进入第二关" : "提交，完成消灭"}
+              {stage === 0 ? "完成润色，前往场景挑战" : "融会贯通，点亮此表达"}
             </button>
           </>
         ) : (
@@ -575,10 +575,10 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
               <Check size={24} color={tokens.gold} />
             </div>
             <div style={{ fontFamily: "'Fraunces', serif", fontSize: 17, color: tokens.textPrimary, marginBottom: 6 }}>
-              已消灭
+              融会贯通
             </div>
             <div style={{ fontSize: 13, color: tokens.textSecondary, marginBottom: 20 }}>
-              这个错误已从两个不同场景中验证掌握
+              此表达已在多场景下融会贯通，内化为你的口语本能！
             </div>
             <button
               onClick={onClose}
@@ -595,7 +595,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
                 cursor: "pointer",
               }}
             >
-              返回错题本
+              返回学习进度
             </button>
           </div>
         )}
@@ -654,18 +654,21 @@ function ErrorCard({ record, onReview }: { record: any, onReview: () => void }) 
 
       {!isConquered ? (
         <>
-          <div style={{ fontSize: 14, color: tokens.coral, textDecoration: "line-through", marginBottom: 3, opacity: 0.85 }}>
-            {record.original}
+          <div style={{ fontSize: 11, color: tokens.textSecondary, marginBottom: 4 }}>
+            💡 建议更自然的说法：
           </div>
-          <div style={{ fontSize: 14, color: tokens.textPrimary, marginBottom: 12 }}>
+          <div style={{ fontSize: 14, color: tokens.teal, fontWeight: '600', marginBottom: 8 }}>
             {record.fixed}
+          </div>
+          <div style={{ fontSize: 12, color: tokens.textSecondary, opacity: 0.7, marginBottom: 12 }}>
+            原本表达：{record.original}
           </div>
         </>
       ) : (
         <div style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontSize: 14, color: tokens.coral, textDecoration: "line-through", opacity: 0.6 }}>
-              {record.original}
+            <div style={{ fontSize: 14, color: tokens.gold, fontWeight: '600' }}>
+              {record.fixed}
             </div>
             <button
               onClick={() => setIsExpanded(!isExpanded)}
@@ -701,8 +704,8 @@ function ErrorCard({ record, onReview }: { record: any, onReview: () => void }) 
               animation: "slideUp 0.2s ease"
             }}>
               <div>
-                <div style={{ fontSize: 11, color: tokens.textSecondary, marginBottom: 2 }}>改正好的句子：</div>
-                <div style={{ fontSize: 13, color: tokens.gold }}>{record.fixed}</div>
+                <div style={{ fontSize: 11, color: tokens.textSecondary, marginBottom: 2 }}>原本表达：</div>
+                <div style={{ fontSize: 13, color: tokens.textSecondary }}>{record.original}</div>
               </div>
               {record.reviewScenario && (
                 <div>
@@ -875,7 +878,7 @@ export function ReviewSection() {
         {/* header */}
         <div style={{ padding: "0 0 10px" }}>
           <div style={{ fontFamily: "'Fraunces', serif", fontSize: 24, color: tokens.textPrimary, marginBottom: 18 }}>
-            错题本
+            学习进度
           </div>
 
           {/* stats row */}
@@ -883,14 +886,14 @@ export function ReviewSection() {
             <div style={{ flex: 1, background: tokens.surfaceCard, border: `1px solid ${tokens.divider}`, borderRadius: 12, padding: "12px 14px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
                 <BookOpen size={14} color={tokens.teal} />
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: tokens.textSecondary }}>待温习</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: tokens.textSecondary }}>正在积累</span>
               </div>
               <div style={{ fontSize: 24, fontFamily: "'Fraunces', serif", color: tokens.textPrimary }}>{pendingCount}</div>
             </div>
             <div style={{ flex: 1, background: tokens.surfaceCard, border: `1px solid ${tokens.divider}`, borderRadius: 12, padding: "12px 14px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
                 <Flame size={14} color={tokens.gold} />
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: tokens.textSecondary }}>已消灭</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: tokens.textSecondary }}>已掌握</span>
               </div>
               <div style={{ fontSize: 24, fontFamily: "'Fraunces', serif", color: tokens.textPrimary }}>{clearedThisWeek}</div>
             </div>
@@ -899,8 +902,8 @@ export function ReviewSection() {
           {/* tabs */}
           <div style={{ display: "flex", gap: 4, background: tokens.surfaceCard, border: `1px solid ${tokens.divider}`, borderRadius: 10, padding: 4, marginBottom: 16 }}>
             {[
-              { key: "all", label: "全部错题" },
-              { key: "focus", label: "专项训练" },
+              { key: "all", label: "积累的表达" },
+              { key: "focus", label: "专项特训" },
             ].map((t) => (
               <button
                 key={t.key}
@@ -933,7 +936,7 @@ export function ReviewSection() {
               ))
             ) : (
               <div style={{ textAlign: 'center', color: tokens.textSecondary, marginTop: 40, fontSize: 14 }}>
-                暂无错题记录。去练习中多说几句吧！
+                暂无积累的表达。多开启几次对话练习吧！
               </div>
             )
           ) : (
@@ -969,7 +972,7 @@ export function ReviewSection() {
                     <div>
                       <div style={{ fontSize: 15, color: tokens.textPrimary, fontWeight: 600, marginBottom: 2 }}>{g.name}</div>
                       <div style={{ fontSize: 12, color: tokens.textSecondary, fontFamily: "'JetBrains Mono', monospace" }}>
-                        {g.count} 条待强化
+                        {g.count} 个表达待熟练
                       </div>
                     </div>
                   </div>
@@ -993,7 +996,7 @@ export function ReviewSection() {
               ))
             ) : (
               <div style={{ textAlign: 'center', color: tokens.textSecondary, marginTop: 40, fontSize: 14 }}>
-                暂无需要专项训练的弱点。
+                暂无专项特训内容。
               </div>
             )
           )}
