@@ -558,10 +558,10 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
           {/* Header */}
           <div className="space-y-2 xs:space-y-4">
             <div className="text-[10px] md:text-xs lg:text-sm text-[#C9A15D] font-mono tracking-[0.25em] uppercase">
-              长效记忆与陪伴 / COMPANION & MEMORY
+              二语习得 / SECOND NATURE
             </div>
             <h2 className="text-xl xs:text-3xl md:text-5xl font-display font-semibold leading-tight text-text-primary tracking-tight">
-              在记忆中，进化出专属默契
+              Learniny 不是教你英语。
             </h2>
           </div>
 
@@ -574,8 +574,8 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
               className="text-xs xs:text-sm md:text-lg lg:text-xl text-text-secondary/90 leading-relaxed font-light tracking-wide"
             >
-              不背单词，不记词典里死板的规则。<br />
-              真正的语言，是大脑最深处的<span className="text-[#C9A15D] font-semibold mx-1 text-shadow-glow">「直觉与本能」</span>。
+              不灌输公式，不塞满字典里死记硬背的条框。<br />
+              Learniny 是<span className="text-[#C9A15D] font-semibold mx-1 text-shadow-glow">「让英语慢慢成为你的第二天性」</span>。
             </motion.p>
 
             {/* Paragraph 2 */}
@@ -585,8 +585,8 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               transition={{ duration: 0.8, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
               className="text-xs xs:text-sm md:text-lg lg:text-xl text-text-secondary/90 leading-relaxed font-light tracking-wide"
             >
-              它拥有<span className="text-[#C9A15D] font-semibold mx-1 text-shadow-glow">「跨越时间的温情记忆」</span>。<br />
-              会默默记住你分享过的每一次碎碎念、犯过的错与细微的小喜好，
+              我们为你搭建无压力的沉浸语境，<br />
+              通过长效记忆，默默记住你分享过的日常、纠结与微小的成长，
             </motion.p>
 
             {/* Paragraph 3 */}
@@ -596,8 +596,8 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               transition={{ duration: 0.8, delay: 1.0, ease: [0.16, 1, 0.3, 1] }}
               className="text-xs xs:text-sm md:text-lg lg:text-xl text-text-secondary/90 leading-relaxed font-light tracking-wide"
             >
-              像一位长情的朋友，在温润的陪伴中，<br />
-              与你共同进化出<span className="text-[#C9A15D] font-semibold mx-1 text-shadow-glow">「无可替代的默契」</span>。
+              像一位随行的老友，在润物无声的互动中，<br />
+              与你共同磨练出<span className="text-[#C9A15D] font-semibold mx-1 text-shadow-glow">「无可替代的交流默契」</span>。
             </motion.p>
           </div>
         </div>
@@ -614,13 +614,13 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         <div className="w-full max-w-5xl mx-auto px-6 md:px-12 flex flex-col md:flex-row items-center justify-between gap-6 md:gap-12 lg:gap-20">
           {/* Left Header info */}
           <div className="w-full md:w-5/12 text-left space-y-2 md:space-y-4">
-            <div className="text-[10px] md:text-xs lg:text-sm text-[#00E5FF] font-mono tracking-[0.25em] uppercase">转变过程 / THE TRANSITION</div>
+            <div className="text-[10px] md:text-xs lg:text-sm text-[#00E5FF] font-mono tracking-[0.25em] uppercase">直觉跃迁 / THE TRANSITION</div>
             <h2 className="text-xl xs:text-2xl md:text-4xl font-display font-semibold text-text-primary leading-tight">
-              跳过语法转换器<br />
-              直接以直觉表达
+              最好的语言学习，<br />
+              不是记住规则。
             </h2>
             <p className="text-xs md:text-sm lg:text-base text-text-secondary leading-relaxed font-light">
-              英语不应该是数学公式。我们摒弃在大脑中“词汇组合+时态校验”的传统滞后思维模式，用最自然的方式把语言磨练成本能。
+              而是有一天，<span className="text-[#00E5FF] font-medium">你忘记了规则，依然能够表达自己</span>。我们绕过繁琐的脑内语法翻译器，用最本能的交流重塑你的第一直觉。
             </p>
           </div>
 
@@ -708,10 +708,10 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               <SpotlightCard
                 number="01 / PRACTICE"
                 emoji="💬"
-                title="像聊天一样开口"
+                title="像聊天一样自然表达"
                 conceptColor="#00E5FF"
               >
-                你说一句，AI 回一句，并用启发式问题引导你深入对话。<span className="hidden sm:inline">重点是“持续输出”，在真实心流中训练表达。</span>
+                在轻松无压力的文字对话中，AI 用启发式问题逐层引导你输出。<span className="hidden sm:inline">不刻意背诵，在真实心流与交流中训练你的表达感官。</span>
               </SpotlightCard>
             </motion.div>
 
@@ -781,12 +781,12 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
           transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
           className="space-y-4 xs:space-y-6 max-w-3xl px-6 md:px-12 text-center"
         >
-          <div className="text-[10px] md:text-xs lg:text-sm text-[#C9A15D] font-mono tracking-[0.25em] uppercase">成长闭环 / THE CORE CYCLE</div>
+          <div className="text-[10px] md:text-xs lg:text-sm text-[#C9A15D] font-mono tracking-[0.25em] uppercase">核心使命 / THE MISSION</div>
           <h2 className="text-xl xs:text-2xl md:text-5xl font-display font-semibold leading-tight text-text-primary tracking-tight">
-            练习 → 自动捕捉错误 → 温习强化 → 带回对话继续用
+            让用户最终忘记自己正在学英语。
           </h2>
           <p className="text-xs md:text-sm lg:text-base text-text-secondary leading-relaxed font-light max-w-2xl mx-auto">
-            Learniny 不是简单的刷题册，而是一套自我进化学习的精密闭环。您说出的每一句话都是画像的养料，在“对话-诊断-纠错-复用”的闭环中周而复始，英语直觉螺旋上升。
+            最好的学习方式，是像呼吸一样无感。在“练习对话 → 智能捕获误区 → 场景温习强化”的螺旋上升闭环中，我们不希望你背负沉重的焦虑，而是让你在交流心流中，最终忘记“学习”本身。
           </p>
         </motion.div>
 
