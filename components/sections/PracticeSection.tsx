@@ -343,61 +343,76 @@ export function PracticeSection() {
       if (audioRef.current) {
         audioRef.current.pause();
       }
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
     };
   }, []);
 
-  const handlePlayAudio = async (id: string, text: string) => {
+  const handlePlayAudio = (id: string, text: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      console.warn('SpeechSynthesis is not supported in this browser.');
+      return;
+    }
+
+    // 1. 如果正在播当前这个，点击则停止
     if (playingId === id) {
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
+      window.speechSynthesis.cancel();
       setPlayingId(null);
       return;
     }
 
-    if (audioRef.current) {
-      audioRef.current.pause();
-      setPlayingId(null);
-    }
+    // 2. 如果正在播放其他语音，先停止它
+    window.speechSynthesis.cancel();
+    setPlayingId(null);
 
     setPlayingLoadingId(id);
-    try {
-      const res = await fetch('/api/speech', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      });
 
-      if (!res.ok) throw new Error('Failed to fetch audio');
+    // 清理文本：只朗读英文内容，过滤系统生成的标记和中文提示（如括号翻译）
+    const cleanedText = text
+      .replace(/\[CORRECTED:[\s\S]*?\]/g, '')
+      .replace(/\[HINT:[\s\S]*?\]/g, '')
+      .replace(/\[SCENARIO:[\s\S]*?\]/g, '')
+      .replace(/\[MEMORY:[\s\S]*?\]/g, '')
+      .replace(/[\u4e00-\u9fa5（）()]/g, '') // 移除非英文括号和中文
+      .trim();
 
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+    if (!cleanedText) {
+      setPlayingLoadingId(null);
+      return;
+    }
 
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      
-      audio.onplay = () => {
-        setPlayingLoadingId(null);
-        setPlayingId(id);
-      };
+    const utterance = new SpeechSynthesisUtterance(cleanedText);
+    utterance.lang = 'en-US'; // 设为美式英语
 
-      audio.onended = () => {
-        setPlayingId(null);
-        URL.revokeObjectURL(url);
-      };
+    // 尝试寻找高质量的英文发音人
+    const voices = window.speechSynthesis.getVoices();
+    const englishVoice = voices.find(v => v.lang.startsWith('en') && (
+      v.name.includes('Google') || 
+      v.name.includes('Natural') || 
+      v.name.includes('Microsoft') || 
+      v.name.includes('Samantha')
+    ));
+    if (englishVoice) {
+      utterance.voice = englishVoice;
+    }
 
-      audio.onerror = () => {
-        setPlayingLoadingId(null);
-        setPlayingId(null);
-        URL.revokeObjectURL(url);
-      };
+    utterance.onstart = () => {
+      setPlayingLoadingId(null);
+      setPlayingId(id);
+    };
 
-      await audio.play();
-    } catch (err) {
-      console.error('[TTS Play Error]', err);
+    utterance.onend = () => {
+      setPlayingId(null);
+    };
+
+    utterance.onerror = (e) => {
+      console.error('[SpeechSynthesis Error]', e);
       setPlayingLoadingId(null);
       setPlayingId(null);
-    }
+    };
+
+    window.speechSynthesis.speak(utterance);
   };
 
   const handleMicClick = async () => {
