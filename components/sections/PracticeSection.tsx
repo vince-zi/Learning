@@ -328,6 +328,7 @@ export function PracticeSection() {
 
   // 语音播放 (TTS) 状态
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [playingText, setPlayingText] = useState<string | null>(null);
   const [playingLoadingId, setPlayingLoadingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -361,8 +362,16 @@ export function PracticeSection() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
-  // 卸载组件时停止播放
+  // 卸载组件时停止播放 & 页面加载时预热加载浏览器原生音色库 (修复 Chrome/Safari 获取声音列表为空的问题)
   useEffect(() => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.getVoices();
+      if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = () => {
+          window.speechSynthesis.getVoices();
+        };
+      }
+    }
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
@@ -373,27 +382,22 @@ export function PracticeSection() {
     };
   }, []);
 
-  const handlePlayAudio = (id: string, text: string) => {
-    if (typeof window === 'undefined' || !window.speechSynthesis) {
-      console.warn('SpeechSynthesis is not supported in this browser.');
+  // 响应式语音朗读控制器：当播放的内容、性别或语速发生变化时，即时响应并播放
+  useEffect(() => {
+    if (!playingId || !playingText) {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
       return;
     }
 
-    // 1. 如果正在播当前这个，点击则停止
-    if (playingId === id) {
-      window.speechSynthesis.cancel();
-      setPlayingId(null);
-      return;
-    }
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
 
-    // 2. 如果正在播放其他语音，先停止它
+    // 1. 停止当前正在播放的声音
     window.speechSynthesis.cancel();
-    setPlayingId(null);
 
-    setPlayingLoadingId(id);
-
-    // 清理文本：只朗读英文内容，过滤系统生成的标记和中文提示（如括号翻译）
-    const cleanedText = text
+    // 2. 清理文本：只朗读英文内容，过滤系统生成的标记和中文提示（如括号翻译）
+    const cleanedText = playingText
       .replace(/\[CORRECTED:[\s\S]*?\]/g, '')
       .replace(/\[HINT:[\s\S]*?\]/g, '')
       .replace(/\[SCENARIO:[\s\S]*?\]/g, '')
@@ -403,19 +407,21 @@ export function PracticeSection() {
 
     if (!cleanedText) {
       setPlayingLoadingId(null);
+      setPlayingId(null);
+      setPlayingText(null);
       return;
     }
 
     const utterance = new SpeechSynthesisUtterance(cleanedText);
     utterance.lang = 'en-US'; // 设为美式英语
 
-    // 语速设置
+    // 3. 设置朗读语速
     let rateValue = 1.0;
     if (ttsSpeed === 'slow') rateValue = 0.75;
     if (ttsSpeed === 'fast') rateValue = 1.25;
     utterance.rate = rateValue;
 
-    // 尝试寻找匹配性别的英文发音人
+    // 4. 寻找匹配性别的英文发音人
     const voices = window.speechSynthesis.getVoices();
     const englishVoices = voices.filter(v => v.lang.startsWith('en'));
     
@@ -453,20 +459,40 @@ export function PracticeSection() {
 
     utterance.onstart = () => {
       setPlayingLoadingId(null);
-      setPlayingId(id);
     };
 
     utterance.onend = () => {
       setPlayingId(null);
+      setPlayingText(null);
     };
 
     utterance.onerror = (e) => {
       console.error('[SpeechSynthesis Error]', e);
       setPlayingLoadingId(null);
       setPlayingId(null);
+      setPlayingText(null);
     };
 
     window.speechSynthesis.speak(utterance);
+  }, [playingId, playingText, ttsGender, ttsSpeed]);
+
+  const handlePlayAudio = (id: string, text: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      console.warn('SpeechSynthesis is not supported in this browser.');
+      return;
+    }
+
+    // 1. 如果正在播当前这个，点击则停止
+    if (playingId === id) {
+      setPlayingId(null);
+      setPlayingText(null);
+      return;
+    }
+
+    // 2. 设置状态，触发 useEffect 进行播放
+    setPlayingLoadingId(id);
+    setPlayingId(id);
+    setPlayingText(text);
   };
 
   const handleMicClick = async () => {
@@ -1129,6 +1155,13 @@ export function PracticeSection() {
                                 🏃 快
                               </button>
                             </div>
+                          </div>
+
+                          {/* Helper Info Note */}
+                          <div className="pt-1.5 border-t border-white/5">
+                            <span className="text-[9px] text-text-secondary/50 block leading-relaxed">
+                              * 朗读使用浏览器原生发音。若您的系统未安装额外的男声音频包，切换后可能仍使用系统默认发音。
+                            </span>
                           </div>
                         </motion.div>
                       </>
