@@ -86,22 +86,20 @@ function SyntaxHint({ errorType, hintText }: { errorType: string; hintText?: str
     >
       <div className="flex items-center gap-3">
         <div
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md w-fit text-[10px] font-mono tracking-wider"
-          style={{ background: '#00B2FF15', border: '1px solid #00B2FF38', color: '#00B2FF' }}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md w-fit text-[10px] font-mono tracking-wider bg-brand-hint/10 border border-brand-hint/25 text-brand-hint"
         >
           <Info size={12} strokeWidth={2.5} />
           <span>小提示 · {hint?.short || '语法'}</span>
         </div>
         <button
           onClick={handleUnderstand}
-          className="flex items-center gap-1 text-[10px] font-mono tracking-wider transition-colors cursor-pointer"
-          style={{ color: '#00B2FF', background: 'transparent', border: 'none' }}
+          className="flex items-center gap-1 text-[10px] font-mono tracking-wider transition-colors cursor-pointer text-brand-hint/70 hover:text-brand-hint"
         >
           <CheckCircle2 size={12} strokeWidth={2} />
           懂了
         </button>
       </div>
-      <p className="text-[12.5px] leading-relaxed pl-0.5" style={{ color: '#8A93A6' }}>
+      <p className="text-[12.5px] leading-relaxed pl-0.5 text-text-secondary">
         {text}
       </p>
     </motion.div>
@@ -170,7 +168,7 @@ function MessageBubble({
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`flex flex-col w-full mb-6 ${isUser ? 'items-end' : 'items-start'}`}
+      className={`flex flex-col w-full mb-4 ${isUser ? 'items-end' : 'items-start'}`}
     >
       <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[75%]`}>
         {/* Syntax hint above AI bubble */}
@@ -179,10 +177,10 @@ function MessageBubble({
         )}
 
         <div
-          className={`relative px-5 py-3.5 text-[15px] leading-relaxed break-words shadow-sm
+          className={`relative px-5 py-3.5 text-[15px] leading-relaxed break-words
             ${isUser
-              ? `bg-surface-user text-text-on-user rounded-[24px] rounded-br-[8px]`
-              : 'bg-surface-ai border border-divider text-text-primary rounded-[24px] rounded-bl-[8px]'
+              ? `bg-[#111] border border-brand-accent/20 text-text-primary rounded-[24px] rounded-br-[8px] shadow-[0_0_20px_rgba(0,255,157,0.04)]`
+              : 'bg-surface-card border border-divider text-text-primary rounded-[24px] rounded-bl-[8px]'
             }`}
         >
           <p className="whitespace-pre-wrap">{msg.content}</p>
@@ -190,8 +188,8 @@ function MessageBubble({
           {isUser && (
             <button
               onClick={onToggleDiff}
-              className="absolute -right-[5px] -bottom-[5px] w-[9px] h-[9px] rounded-full shadow-[0_0_8px_rgba(201,161,93,0.4)] border-2 border-app-bg hover:scale-125 transition-transform cursor-pointer z-10"
-              style={{ background: '#C9A15D' }}
+              className="absolute -right-[5px] -bottom-[5px] w-[9px] h-[9px] rounded-full shadow-[0_0_6px_rgba(0,255,157,0.5)] border-2 border-app-bg hover:scale-125 transition-transform cursor-pointer z-10"
+              style={{ background: '#00FF9D' }}
             />
           )}
 
@@ -245,10 +243,10 @@ function MessageBubble({
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="mt-2 flex items-center gap-1.5 text-[11.5px] text-[#C9A15D] font-medium"
+              className="mt-2 flex items-center gap-1.5 text-[11.5px] text-brand-accent font-medium"
             >
-              <Lightbulb className="w-3.5 h-3.5 text-[#C9A15D] animate-pulse" />
-              <span>💡 尝试点击右下角“小黄点”查看地道改写建议</span>
+              <Lightbulb className="w-3.5 h-3.5 text-brand-accent animate-pulse" />
+              <span>点击右下角绿点查看地道改写建议</span>
             </motion.div>
           )}
 
@@ -899,20 +897,31 @@ export function PracticeSection() {
         
         {/* Welcome State / Setup session */}
         {!activeSessionId ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-6 md:p-12 max-w-lg mx-auto">
-            <div className="w-16 h-16 rounded-full bg-brand-accent/15 border border-brand-accent/30 flex items-center justify-center mb-6 animate-pulse">
-              <MessageSquare className="w-8 h-8 text-brand-accent drop-shadow-[0_0_8px_rgba(0,255,157,0.5)]" />
-            </div>
-            <h2 className="text-2xl font-display text-text-primary tracking-wide mb-3 uppercase">启发式对话学习</h2>
-            <p className="text-sm text-text-secondary leading-relaxed mb-8">
-              不提供直接的答案，而是在自然对话中通过启发式提问，引导你自我发现英语的句法规律与表达直觉。
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            className="flex-1 flex flex-col items-center justify-center text-center p-6 md:p-12 max-w-lg mx-auto"
+          >
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.2, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+              className="w-20 h-20 rounded-full bg-brand-accent/10 border border-brand-accent/20 flex items-center justify-center mb-6"
+            >
+              <MessageSquare className="w-10 h-10 text-brand-accent drop-shadow-[0_0_12px_rgba(0,255,157,0.4)]" />
+            </motion.div>
+            <h2 className="text-2xl font-display text-text-primary tracking-wide mb-2">开始对话</h2>
+            <p className="text-sm text-text-secondary leading-relaxed mb-2 max-w-sm">
+              在自然对话中，通过启发式提问引导你自己发现英语的表达规律
             </p>
-            <div className="flex flex-col gap-4 w-full max-w-xs mx-auto">
+            <p className="text-xs text-text-secondary/40 mb-8">像朋友聊天一样，轻松无压力</p>
+            <div className="flex flex-col gap-3 w-full max-w-xs mx-auto">
               {lastSessionId && (
                 <button
                   onClick={handleResumeLastSession}
                   disabled={isInitializing}
-                  className="w-full px-6 py-3.5 bg-surface-card border border-brand-accent/30 text-brand-accent text-xs font-bold tracking-widest uppercase hover:scale-105 transition-transform rounded-full disabled:opacity-55 cursor-pointer text-center"
+                  className="w-full px-6 py-3.5 bg-surface-card border border-white/10 text-text-primary text-sm font-medium tracking-wide hover:border-brand-accent/30 hover:text-brand-accent transition-all rounded-2xl disabled:opacity-55 cursor-pointer text-center"
                 >
                   {isInitializing ? '加载中...' : '继续上次对话'}
                 </button>
@@ -920,18 +929,18 @@ export function PracticeSection() {
               <button
                 onClick={handleStartNewSession}
                 disabled={isInitializing}
-                className="w-full px-6 py-3.5 bg-brand-accent text-[#000000] text-xs font-bold tracking-widest uppercase hover:scale-105 transition-transform rounded-full shadow-[0_0_20px_rgba(0,255,157,0.2)] disabled:opacity-55 cursor-pointer text-center"
+                className="w-full px-6 py-3.5 bg-brand-accent text-[#000000] text-sm font-semibold tracking-wide hover:scale-[1.02] transition-transform rounded-2xl shadow-[0_0_24px_rgba(0,255,157,0.15)] disabled:opacity-55 cursor-pointer text-center"
               >
                 {isInitializing ? '启动中...' : '开启新对话'}
               </button>
             </div>
-          </div>
+          </motion.div>
         ) : (
           /* Normal Chat Interface */
           <>
             {/* Fixed Top Bar — always visible */}
             <div className="absolute top-0 left-0 right-0 z-20 flex justify-between items-center px-4 md:px-8 py-3.5 bg-gradient-to-b from-app-bg via-app-bg/95 to-transparent">
-              <span className="text-[10px] text-text-secondary font-mono tracking-widest uppercase hidden sm:inline">ZPD Session Active</span>
+              <span className="text-[10px] text-text-secondary/40 font-mono tracking-widest uppercase hidden sm:inline">Learning</span>
               
               {/* Language Preference Switcher */}
               <div className="flex bg-[#0e0e0e]/80 backdrop-blur-xl border border-white/10 rounded-full p-1 text-[11px] font-medium text-text-secondary shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)]">
@@ -970,7 +979,7 @@ export function PracticeSection() {
               <button
                 onClick={() => setShowEndConfirm(true)}
                 disabled={isEndingSession}
-                className="px-3.5 py-1.5 bg-brand-error/5 hover:bg-brand-error/15 border border-brand-error/25 hover:border-brand-error/50 rounded-full text-[10px] font-bold text-brand-error tracking-wider uppercase transition-all duration-300 disabled:opacity-55 cursor-pointer shadow-[0_0_12px_rgba(255,75,75,0.05)] animate-pulse"
+                className="px-3.5 py-1.5 bg-transparent hover:bg-brand-error/10 border border-brand-error/20 hover:border-brand-error/40 rounded-full text-[10px] font-medium text-brand-error/70 hover:text-brand-error tracking-wider transition-all duration-300 disabled:opacity-55 cursor-pointer"
               >
                 {isEndingSession ? '结算中...' : '结束对话'}
               </button>
@@ -980,8 +989,9 @@ export function PracticeSection() {
             <div ref={containerRef} className="flex-1 overflow-y-auto px-4 md:px-8 space-y-6 flex flex-col pb-24 pt-20 scrollbar-none">
 
               {messages.length === 0 && !isThinking && (
-                <div className="flex flex-col items-center justify-center h-full text-center py-20">
-                  <p className="text-sm text-text-secondary/50 tracking-wider">对话已就绪，请输入你的第一句话...</p>
+                <div className="flex flex-col items-center justify-center h-full text-center py-20 gap-2">
+                  <p className="text-sm text-text-secondary/40 tracking-wider">对话已就绪</p>
+                  <p className="text-xs text-text-secondary/25">输入你的第一句话开始练习</p>
                 </div>
               )}
 
@@ -1003,11 +1013,11 @@ export function PracticeSection() {
               })}
 
               {isThinking && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
-                  <div className="bg-surface-ai border border-divider rounded-[24px] rounded-bl-[8px] px-4 py-4 flex gap-1.5 items-center">
-                    <div className="w-1.5 h-1.5 bg-text-secondary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-1.5 h-1.5 bg-text-secondary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-1.5 h-1.5 bg-text-secondary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex justify-start">
+                  <div className="bg-surface-card border border-divider rounded-[24px] rounded-bl-[8px] px-5 py-4 flex gap-1.5 items-center">
+                    <div className="w-2 h-2 bg-brand-accent/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-2 h-2 bg-brand-accent/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-2 h-2 bg-brand-accent/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
                 </motion.div>
               )}
@@ -1066,7 +1076,7 @@ export function PracticeSection() {
                   </div>
                 </div>
 
-                <div className="relative flex items-center">
+                <div className="relative flex items-center bg-surface-card border border-white/[0.06] rounded-[28px] p-1.5 shadow-[0_8px_30px_rgba(0,0,0,0.3)] focus-within:border-brand-accent/30 transition-colors">
                   <textarea
                     id="chat-textarea"
                     value={input}
@@ -1090,16 +1100,16 @@ export function PracticeSection() {
                     rows={1}
                     placeholder={isRecording ? "正在录音，点击右侧麦克风停止录音..." : "输入内容，Enter 发送"}
                     disabled={isTranscribing}
-                    className="w-full bg-surface-card border border-divider rounded-2xl py-4 pl-5 pr-12 text-[15px] focus:outline-none focus:border-text-secondary transition-colors placeholder:text-text-secondary font-normal text-text-primary shadow-lg resize-none overflow-hidden scrollbar-none disabled:opacity-75"
+                    className="flex-1 bg-transparent border-0 py-3 pl-4 pr-2 text-[15px] focus:outline-none placeholder:text-text-secondary font-normal text-text-primary resize-none overflow-hidden scrollbar-none disabled:opacity-75"
                   />
                   <button
                     type="button"
                     onClick={handleMicClick}
                     disabled={isTranscribing}
-                    className={`absolute right-3.5 p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center
-                      ${isRecording 
-                        ? 'bg-brand-error text-white animate-pulse' 
-                        : 'text-text-secondary hover:text-text-primary hover:bg-divider/30'
+                    className={`shrink-0 p-2.5 rounded-full transition-all cursor-pointer flex items-center justify-center
+                      ${isRecording
+                        ? 'bg-brand-error text-white animate-pulse shadow-[0_0_12px_rgba(255,51,102,0.4)]'
+                        : 'text-text-secondary hover:text-text-primary hover:bg-white/5'
                       } disabled:opacity-50`}
                   >
                     {isTranscribing ? (
@@ -1120,9 +1130,21 @@ export function PracticeSection() {
       </div>
 
       {/* End Session Confirmation Modal */}
+      <AnimatePresence>
       {showEndConfirm && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
-          <div className="bg-surface-card border border-divider rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6"
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="bg-surface-card border border-divider rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
+          >
             <h3 className="text-lg font-display text-text-primary mb-2">结束对话</h3>
             <p className="text-sm text-text-secondary mb-8 leading-relaxed">
               确定结束：生成今日发现，点亮星图<br />
@@ -1142,9 +1164,10 @@ export function PracticeSection() {
                 保留对话，稍后继续
               </button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
     </div>
   );

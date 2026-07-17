@@ -152,7 +152,7 @@ function SpotlightCard({
           <h4 className="text-[11px] sm:text-sm md:text-base font-medium text-text-primary transition-colors duration-300">
             {title}
           </h4>
-          <div className="text-[9.5px] sm:text-xs md:text-[13px] lg:text-sm text-text-secondary leading-normal sm:leading-relaxed font-light">
+          <div className="text-[10px] sm:text-xs md:text-[13px] lg:text-sm text-text-secondary leading-normal sm:leading-relaxed font-light">
             {children}
           </div>
         </div>
@@ -554,25 +554,25 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
           </svg>
         </div>
 
-        <div className="w-full max-w-4xl mx-auto px-6 md:px-12 flex flex-col items-center justify-center text-center z-10 space-y-6 xs:space-y-8 md:space-y-16">
+        <div className="w-full max-w-5xl mx-auto px-3 sm:px-6 md:px-12 flex flex-col items-center justify-center text-center z-10 space-y-6 md:space-y-12">
           {/* Header */}
-          <div className="space-y-2 xs:space-y-4">
+          <div className="space-y-2 sm:space-y-3">
             <div className="text-[10px] md:text-xs lg:text-sm text-[#C9A15D] font-mono tracking-[0.25em] uppercase">
               二语习得 / SECOND NATURE
             </div>
-            <h2 className="text-xl xs:text-3xl md:text-5xl font-display font-semibold leading-tight text-text-primary tracking-tight">
+            <h2 className="text-2xl sm:text-3xl md:text-5xl font-display font-semibold leading-tight text-text-primary tracking-tight">
               Learniny 不是教你英语。
             </h2>
           </div>
 
           {/* Staggered Vertical Copywriting Reveal */}
-          <div className="flex flex-col items-center justify-center space-y-4 xs:space-y-6 md:space-y-10 max-w-3xl">
+          <div className="flex flex-col items-center justify-center space-y-4 md:space-y-8 max-w-3xl">
             {/* Paragraph 1 */}
             <motion.p
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: activeFrame === 2 ? 1 : 0, y: activeFrame === 2 ? 0 : 15 }}
               transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="text-xs xs:text-sm md:text-lg lg:text-xl text-text-secondary/90 leading-relaxed font-light tracking-wide"
+              className="text-sm sm:text-base md:text-lg lg:text-xl text-text-secondary/90 leading-relaxed font-light tracking-wide"
             >
               不灌输公式，不塞满字典里死记硬背的条框。<br />
               Learniny 是<span className="text-[#C9A15D] font-semibold mx-1 text-shadow-glow">「让英语慢慢成为你的第二天性」</span>。
@@ -583,7 +583,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: activeFrame === 2 ? 1 : 0, y: activeFrame === 2 ? 0 : 15 }}
               transition={{ duration: 0.8, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
-              className="text-xs xs:text-sm md:text-lg lg:text-xl text-text-secondary/90 leading-relaxed font-light tracking-wide"
+              className="text-sm sm:text-base md:text-lg lg:text-xl text-text-secondary/90 leading-relaxed font-light tracking-wide"
             >
               我们为你搭建无压力的沉浸语境，<br />
               通过长效记忆，默默记住你分享过的日常、纠结与微小的成长，
@@ -594,7 +594,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: activeFrame === 2 ? 1 : 0, y: activeFrame === 2 ? 0 : 15 }}
               transition={{ duration: 0.8, delay: 1.0, ease: [0.16, 1, 0.3, 1] }}
-              className="text-xs xs:text-sm md:text-lg lg:text-xl text-text-secondary/90 leading-relaxed font-light tracking-wide"
+              className="text-sm sm:text-base md:text-lg lg:text-xl text-text-secondary/90 leading-relaxed font-light tracking-wide"
             >
               像一位随行的老友，在润物无声的互动中，<br />
               与你共同磨练出<span className="text-[#C9A15D] font-semibold mx-1 text-shadow-glow">「无可替代的交流默契」</span>。
@@ -611,15 +611,15 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         className="absolute inset-0 w-full h-full flex items-center justify-center"
         style={{ pointerEvents: activeFrame === 3 ? 'auto' : 'none' }}
       >
-        <div className="w-full max-w-5xl mx-auto px-6 md:px-12 flex flex-col md:flex-row items-center justify-between gap-6 md:gap-12 lg:gap-20">
+        <div className="w-full max-w-5xl mx-auto px-3 sm:px-6 md:px-12 flex flex-col md:flex-row items-center justify-between gap-6 md:gap-12 lg:gap-20">
           {/* Left Header info */}
           <div className="w-full md:w-5/12 text-left space-y-2 md:space-y-4">
             <div className="text-[10px] md:text-xs lg:text-sm text-[#00E5FF] font-mono tracking-[0.25em] uppercase">直觉跃迁 / THE TRANSITION</div>
-            <h2 className="text-xl xs:text-2xl md:text-4xl font-display font-semibold text-text-primary leading-tight">
+            <h2 className="text-xl sm:text-2xl md:text-4xl font-display font-semibold text-text-primary leading-tight">
               最好的语言学习，<br />
               不是记住规则。
             </h2>
-            <p className="text-xs md:text-sm lg:text-base text-text-secondary leading-relaxed font-light">
+            <p className="text-sm md:text-base lg:text-base text-text-secondary leading-relaxed font-light">
               而是有一天，<span className="text-[#00E5FF] font-medium">你忘记了规则，依然能够表达自己</span>。我们绕过繁琐的脑内语法翻译器，用最本能的交流重塑你的第一直觉。
             </p>
           </div>
@@ -653,8 +653,8 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
                   <div className="w-1.5 h-1.5 rounded-full bg-white/20" />
                 </div>
                 <div className="text-[10px] md:text-xs font-mono uppercase tracking-widest text-text-secondary/50 mb-1">使用之前 / TRADITIONAL</div>
-                <h3 className="text-xs xs:text-sm md:text-base font-medium text-text-secondary mb-1">生硬死记单词语法，一开口卡顿难受</h3>
-                <p className="text-[11px] md:text-xs lg:text-sm text-text-secondary/60 leading-relaxed font-light">
+                <h3 className="text-sm sm:text-sm md:text-base font-medium text-text-secondary mb-1">生硬死记单词语法，一开口卡顿难受</h3>
+                <p className="text-xs md:text-xs lg:text-sm text-text-secondary/60 leading-relaxed font-light">
                   试图在脑海中对每一个单词 and 结构进行规则映射，越想对越不敢说，彻底失去口语流利度。
                 </p>
               </motion.div>
@@ -670,8 +670,8 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
                   <div className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />
                 </div>
                 <div className="text-[10px] md:text-xs font-mono uppercase tracking-widest text-brand-accent/60 mb-1">使用之后 / INTUITIVE</div>
-                <h3 className="text-xs xs:text-sm md:text-base font-medium text-text-primary mb-1">英语在大脑中内化，脱口即可表达</h3>
-                <p className="text-[11px] md:text-xs lg:text-sm text-text-secondary/80 leading-relaxed font-light">
+                <h3 className="text-sm sm:text-sm md:text-base font-medium text-text-primary mb-1">英语在大脑中内化，脱口即可表达</h3>
+                <p className="text-xs md:text-xs lg:text-sm text-text-secondary/80 leading-relaxed font-light">
                   AI 引导在错误场景中自我纠偏，形成肌肉记忆。无需二次语法校验，说英语就像说话一样自然。
                 </p>
               </motion.div>
@@ -688,11 +688,11 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         className="absolute inset-0 w-full h-full flex items-center justify-center"
         style={{ pointerEvents: activeFrame === 4 ? 'auto' : 'none' }}
       >
-        <div className="w-full max-w-5xl mx-auto px-6 md:px-12 flex flex-col justify-center gap-4 sm:gap-8">
+        <div className="w-full max-w-6xl mx-auto px-3 md:px-12 flex flex-col justify-center gap-4 sm:gap-8">
           {/* Header info */}
           <div className="text-left max-w-xl">
             <div className="text-[10px] md:text-xs lg:text-sm text-[#00FF9D] font-mono tracking-[0.25em] uppercase mb-2">学习矩阵 / METHODOLOGY</div>
-            <h2 className="text-xl xs:text-2xl md:text-3xl font-display font-semibold text-text-primary leading-tight">
+            <h2 className="text-xl sm:text-2xl md:text-3xl font-display font-semibold text-text-primary leading-tight">
               系统化打造你的二语习得循环
             </h2>
           </div>
@@ -711,7 +711,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
                 title="像聊天一样自然表达"
                 conceptColor="#00E5FF"
               >
-                在轻松无压力的文字对话中，AI 用启发式问题逐层引导你输出。<span className="hidden sm:inline">不刻意背诵，在真实心流与交流中训练你的表达感官。</span>
+                在轻松无压力的文字对话中，AI 用启发式问题逐层引导你输出。<span>不刻意背诵，在真实心流与交流中训练你的表达感官。</span>
               </SpotlightCard>
             </motion.div>
 
@@ -727,7 +727,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
                 title="纠错只抓关键点"
                 conceptColor="#00FF9D"
               >
-                只挑选影响交流的语法盲区或中式语病，提供地道的原地改写建议。<span className="hidden sm:inline">拒绝枯燥公式与教条，让反馈更具针对性。</span>
+                只挑选影响交流的语法盲区或中式语病，提供地道的原地改写建议。<span>拒绝枯燥公式与教条，让反馈更具针对性。</span>
               </SpotlightCard>
             </motion.div>
 
@@ -743,7 +743,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
                 title="错题本两步强化"
                 conceptColor="#FFFFFF"
               >
-                先把偏差句改写正确，再在系统随机生成的全新场景中进行二次输出测试。<span className="hidden sm:inline">彻底打通遗忘曲线，内化语法。</span>
+                先把偏差句改写正确，再在系统随机生成的全新场景中进行二次输出测试。<span>彻底打通遗忘曲线，内化语法。</span>
               </SpotlightCard>
             </motion.div>
 
@@ -759,7 +759,7 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
                 title="星图可视化成长"
                 conceptColor="#C9A15D"
               >
-                将你的核心薄弱项与已掌握句型，在 3D 旋转星盘中连点成线展示。<span className="hidden sm:inline">学习进度、盲区和成长路径一目了然。</span>
+                将你的核心薄弱项与已掌握句型，在 3D 旋转星盘中连点成线展示。<span>学习进度、盲区和成长路径一目了然。</span>
               </SpotlightCard>
             </motion.div>
           </div>
@@ -779,13 +779,13 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
           initial={{ opacity: 0, y: 25 }}
           animate={{ opacity: activeFrame === 5 ? 1 : 0, y: activeFrame === 5 ? 0 : 25 }}
           transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-          className="space-y-4 xs:space-y-6 max-w-3xl px-6 md:px-12 text-center"
+          className="space-y-4 sm:space-y-5 max-w-4xl px-3 sm:px-6 md:px-12 text-center"
         >
           <div className="text-[10px] md:text-xs lg:text-sm text-[#C9A15D] font-mono tracking-[0.25em] uppercase">核心使命 / THE MISSION</div>
-          <h2 className="text-xl xs:text-2xl md:text-5xl font-display font-semibold leading-tight text-text-primary tracking-tight">
+          <h2 className="text-2xl sm:text-2xl md:text-5xl font-display font-semibold leading-tight text-text-primary tracking-tight">
             让用户最终忘记自己正在学英语。
           </h2>
-          <p className="text-xs md:text-sm lg:text-base text-text-secondary leading-relaxed font-light max-w-2xl mx-auto">
+          <p className="text-sm md:text-base lg:text-base text-text-secondary leading-relaxed font-light max-w-2xl mx-auto">
             最好的学习方式，是像呼吸一样无感。在“练习对话 → 智能捕获误区 → 场景温习强化”的螺旋上升闭环中，我们不希望你背负沉重的焦虑，而是让你在交流心流中，最终忘记“学习”本身。
           </p>
         </motion.div>
@@ -795,11 +795,11 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: activeFrame === 5 ? 1 : 0, scale: activeFrame === 5 ? 1 : 0.95 }}
           transition={{ duration: 0.8, delay: 0.45, ease: [0.16, 1, 0.3, 1] }}
-          className="mt-6 xs:mt-12 lg:mt-16 flex flex-col items-center gap-4 sm:gap-6"
+          className="mt-6 sm:mt-10 lg:mt-16 flex flex-col items-center gap-4 sm:gap-6"
         >
           <button
             onClick={onStartChat}
-            className="group relative inline-flex items-center gap-3.5 text-xs xs:text-sm md:text-base font-mono tracking-wider text-brand-accent font-bold cursor-pointer transition-all duration-300 pointer-events-auto"
+            className="group relative inline-flex items-center gap-3.5 text-xs sm:text-sm md:text-base font-mono tracking-wider text-brand-accent font-bold cursor-pointer transition-all duration-300 pointer-events-auto"
           >
             <span>立即开启对话 / START CHAT</span>
             <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-brand-accent/10 border border-brand-accent/30 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:bg-brand-accent group-hover:text-black">
