@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
   try {
-    const { text, voice = 'en-US-JennyNeural' } = await req.json();
+    const { text, voice = 'acd328f8-9955-4712-9177-badc6caa0ec6' } = await req.json();
 
     if (!text || typeof text !== 'string') {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 });
