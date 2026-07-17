@@ -177,10 +177,19 @@ function SpotlightCard({
 // ----------------------------------------------------------------------
 export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
   const [activeFrame, setActiveFrame] = useState(1);
+  const [mobileWord, setMobileWord] = useState<'A' | 'B'>('A');
   const [showEvolvedSubtitle, setShowEvolvedSubtitle] = useState(false);
   const litCountRef = useRef(0);              // how many chars are currently lit
   const subtitleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTransitionTime = useRef(0);
+
+  // Auto-cycle for mobile layout (4-second interval)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMobileWord((prev) => (prev === 'A' ? 'B' : 'A'));
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
   const touchStartY = useRef(0);
 
   // Called by each CharCell with +1 (lit) or -1 (decayed back)
@@ -321,8 +330,45 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
         className="absolute inset-0 w-full h-full flex flex-col justify-center items-center"
         style={{ pointerEvents: activeFrame === 1 ? 'auto' : 'none' }}
       >
+        {/* Ambient Background Layer (Spotlight + Star Orbit Rings + Radial Grid) */}
+        <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
+          {/* Pulsing center spotlight orb */}
+          <motion.div
+            animate={{
+              scale: activeFrame === 1 ? (showEvolvedSubtitle || mobileWord === 'B' ? 1.15 : 1) : 0.8,
+              opacity: activeFrame === 1 ? (showEvolvedSubtitle || mobileWord === 'B' ? 0.12 : 0.07) : 0,
+              background: (showEvolvedSubtitle || mobileWord === 'B')
+                ? 'radial-gradient(circle, rgba(201, 161, 93, 0.45) 0%, rgba(0, 0, 0, 0) 70%)'
+                : 'radial-gradient(circle, rgba(0, 229, 255, 0.35) 0%, rgba(0, 0, 0, 0) 70%)'
+            }}
+            transition={{ duration: 1.8, ease: "easeInOut" }}
+            className="absolute w-[600px] h-[600px] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full blur-[80px]"
+          />
+
+          {/* Minimal grid lines pattern */}
+          <div 
+            className="absolute inset-0 opacity-[0.02] bg-[linear-gradient(to_right,#808080_1px,transparent_1px),linear-gradient(to_bottom,#808080_1px,transparent_1px)] bg-[size:40px_40px]"
+            style={{ 
+              maskImage: 'radial-gradient(ellipse 60% 50% at 50% 50%, #000 60%, transparent 100%)', 
+              WebkitMaskImage: 'radial-gradient(ellipse 60% 50% at 50% 50%, #000 60%, transparent 100%)' 
+            }}
+          />
+
+          {/* Dynamic rotating celestial dashed rings */}
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 70, repeat: Infinity, ease: "linear" }}
+            className="absolute w-[280px] h-[280px] sm:w-[460px] sm:h-[460px] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.03] border-dashed"
+          />
+          <motion.div
+            animate={{ rotate: -360 }}
+            transition={{ duration: 90, repeat: Infinity, ease: "linear" }}
+            className="absolute w-[320px] h-[320px] sm:w-[520px] sm:h-[520px] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.015]"
+          />
+        </div>
+
         {/* Desktop Layout: corners layout */}
-        <div className="hidden md:flex absolute inset-0 w-full h-full max-w-7xl mx-auto px-6 md:px-12 py-12 flex-col justify-between pointer-events-none">
+        <div className="hidden md:flex absolute inset-0 w-full h-full max-w-7xl mx-auto px-6 md:px-12 py-12 flex-col justify-between pointer-events-none z-10">
           {/* Top row */}
           <div className="w-full flex justify-between items-center pointer-events-auto">
             <div className="text-[10px] md:text-xs lg:text-sm font-mono tracking-[0.25em] text-text-secondary/50 uppercase">
@@ -387,21 +433,71 @@ export function HomeSection({ onStartChat }: { onStartChat: () => void }) {
           </div>
         </div>
 
-        {/* Mobile Layout: Stacked Editorial Cover */}
-        <div className="flex md:hidden flex-col items-center justify-between w-full h-full px-6 py-12 text-center pointer-events-auto">
+        {/* Mobile Layout: Stacked Editorial Cover (With Smooth Looping Morph) */}
+        <div className="flex md:hidden flex-col items-center justify-between w-full h-full px-6 py-12 text-center pointer-events-auto z-10">
           {/* Top row */}
           <div className="text-[9px] text-[#00E5FF]/60 font-mono tracking-[0.2em] uppercase flex items-center gap-1.5 mt-2">
             <span className="w-1.5 h-1.5 rounded-full bg-[#00E5FF] animate-pulse" />
             LEARNINY // CONCEPT 01
           </div>
 
-          {/* Center */}
-          <div className="flex flex-col items-center justify-center py-6">
-            <h1 className="text-5xl font-display font-light tracking-[0.22em] text-white/95 uppercase pl-[0.22em] leading-none">
-              INTUITION
-            </h1>
-            <div className="text-[10px] font-mono tracking-[0.3em] text-text-secondary/80 uppercase mt-4 pl-[0.3em]">
-              在对话中重建英语直觉
+          {/* Center Morphing Content */}
+          <div className="flex flex-col items-center justify-center py-6 w-full relative">
+            <div className="relative h-20 w-full flex items-center justify-center">
+              <AnimatePresence mode="wait">
+                {mobileWord === 'A' ? (
+                  <motion.h1
+                    key="wordA"
+                    initial={{ opacity: 0, y: 15, filter: 'blur(4px)' }}
+                    animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                    exit={{ opacity: 0, y: -15, filter: 'blur(4px)' }}
+                    transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                    className="text-5xl font-display font-light tracking-[0.22em] text-white/95 uppercase pl-[0.22em] leading-none absolute"
+                  >
+                    INTUITION
+                  </motion.h1>
+                ) : (
+                  <motion.h1
+                    key="wordB"
+                    initial={{ opacity: 0, y: 15, filter: 'blur(4px)' }}
+                    animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                    exit={{ opacity: 0, y: -15, filter: 'blur(4px)' }}
+                    transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                    className="text-5xl font-display font-light tracking-[0.22em] text-[#C9A15D] drop-shadow-[0_0_20px_rgba(201,161,93,0.5)] uppercase pl-[0.22em] leading-none absolute"
+                  >
+                    EVOLUTION
+                  </motion.h1>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Subtitle Morph */}
+            <div className="relative h-8 mt-6 w-full flex items-center justify-center">
+              <AnimatePresence mode="wait">
+                {mobileWord === 'A' ? (
+                  <motion.div
+                    key="subA"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.6 }}
+                    className="text-[10px] font-mono tracking-[0.3em] text-text-secondary/80 uppercase pl-[0.3em] absolute"
+                  >
+                    在对话中重建英语直觉
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="subB"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.6 }}
+                    className="text-[10px] font-mono tracking-[0.3em] text-[#C9A15D]/80 uppercase pl-[0.3em] absolute"
+                  >
+                    在交流中习得语言本能
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
 
