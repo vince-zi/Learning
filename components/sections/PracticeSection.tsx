@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Lightbulb, Languages, Sparkles, MessageSquare, CheckCircle2, Info } from 'lucide-react';
+import { Send, Lightbulb, Languages, Sparkles, MessageSquare, CheckCircle2, Info, Mic, MicOff, Volume2, VolumeX, Loader2 } from 'lucide-react';
 import { useSessionStore } from '@/store/session-store';
 import { getUserId, setUserId } from '@/lib/user-id';
 
@@ -125,12 +125,18 @@ function MessageBubble({
   msg, 
   expandedDiffId, 
   onToggleDiff,
-  isFirstUserMsg
+  isFirstUserMsg,
+  onPlayAudio,
+  playingId,
+  playingLoadingId
 }: { 
   msg: ExtendedMessage; 
   expandedDiffId: string | null; 
   onToggleDiff: () => void;
   isFirstUserMsg: boolean;
+  onPlayAudio?: (id: string, text: string) => void;
+  playingId?: string | null;
+  playingLoadingId?: string | null;
 }) {
   const isUser = msg.role === 'user';
   const hasEnglish = /[a-zA-Z]{3,}/.test(msg.content);
@@ -190,7 +196,22 @@ function MessageBubble({
           )}
 
           {!isUser && hasEnglish && (
-            <div className="mt-3 pt-2 border-t border-divider flex justify-end items-center select-none">
+            <div className="mt-3 pt-2 border-t border-divider flex justify-end items-center gap-4 select-none">
+              <button
+                onClick={() => onPlayAudio?.(msg.id, msg.content)}
+                disabled={playingLoadingId === msg.id}
+                className="flex items-center gap-1.5 text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors"
+              >
+                {playingLoadingId === msg.id ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : playingId === msg.id ? (
+                  <VolumeX className="w-3.5 h-3.5" />
+                ) : (
+                  <Volume2 className="w-3.5 h-3.5" />
+                )}
+                {playingLoadingId === msg.id ? '生成中...' : playingId === msg.id ? '暂停' : '朗读'}
+              </button>
+
               <button
                 onClick={handleTranslate}
                 disabled={isTranslating}
@@ -304,6 +325,150 @@ export function PracticeSection() {
   const [isInitializing, setIsInitializing] = useState(false);
 
   const [input, setInput] = useState('');
+
+  // 语音播放 (TTS) 状态
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [playingLoadingId, setPlayingLoadingId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // 语音录音 (ASR) 状态
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  // 卸载组件时停止播放
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    };
+  }, []);
+
+  const handlePlayAudio = async (id: string, text: string) => {
+    if (playingId === id) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      setPlayingId(null);
+      return;
+    }
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      setPlayingId(null);
+    }
+
+    setPlayingLoadingId(id);
+    try {
+      const res = await fetch('/api/speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!res.ok) throw new Error('Failed to fetch audio');
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      
+      audio.onplay = () => {
+        setPlayingLoadingId(null);
+        setPlayingId(id);
+      };
+
+      audio.onended = () => {
+        setPlayingId(null);
+        URL.revokeObjectURL(url);
+      };
+
+      audio.onerror = () => {
+        setPlayingLoadingId(null);
+        setPlayingId(null);
+        URL.revokeObjectURL(url);
+      };
+
+      await audio.play();
+    } catch (err) {
+      console.error('[TTS Play Error]', err);
+      setPlayingLoadingId(null);
+      setPlayingId(null);
+    }
+  };
+
+  const handleMicClick = async () => {
+    if (isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(track => track.stop());
+
+        if (audioChunksRef.current.length === 0) return;
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        setIsRecording(false);
+        setIsTranscribing(true);
+
+        try {
+          const formData = new FormData();
+          formData.append('file', audioBlob, 'voice.webm');
+
+          const response = await fetch('/api/transcribe', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!response.ok) throw new Error('Transcription failed');
+
+          const data = await response.json();
+          if (data.text) {
+            setInput(prev => {
+              const base = prev.trim();
+              return base ? `${base} ${data.text}` : data.text;
+            });
+            setTimeout(() => {
+              const el = document.getElementById('chat-textarea') as HTMLTextAreaElement;
+              if (el) {
+                el.style.height = 'auto';
+                el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+              }
+            }, 50);
+          }
+        } catch (err) {
+          console.error('[ASR Error]', err);
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+      setIsRecording(false);
+    }
+  };
+
   const [expandedDiffId, setExpandedDiffId] = useState<string | null>(null);
   const lastUserMsgIdRef = useRef<string | null>(null);
   const [msgExtras, setMsgExtras] = useState<Record<string, { _errorType?: string; _correctedText?: string; _hintText?: string }>>({});
@@ -793,6 +958,9 @@ export function PracticeSection() {
                     expandedDiffId={expandedDiffId}
                     onToggleDiff={() => setExpandedDiffId(expandedDiffId === msg.id ? null : msg.id)}
                     isFirstUserMsg={isFirstUserMsg}
+                    onPlayAudio={handlePlayAudio}
+                    playingId={playingId}
+                    playingLoadingId={playingLoadingId}
                   />
                 )
               })}
@@ -843,29 +1011,52 @@ export function PracticeSection() {
                   </AnimatePresence>
                 </div>
 
-                <textarea
-                  value={input}
-                  onChange={e => {
-                    setInput(e.target.value);
-                    const el = e.target;
-                    el.style.height = 'auto';
-                    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
-                  }}
-                  onFocus={handleInputFocus}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleSend(e as any);
-                    }
-                  }}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck="false"
-                  rows={1}
-                  placeholder="输入内容，Enter 发送"
-                  className="w-full bg-surface-card border border-divider rounded-2xl py-4 px-5 text-[15px] focus:outline-none focus:border-text-secondary transition-colors placeholder:text-text-secondary font-normal text-text-primary shadow-lg resize-none overflow-hidden scrollbar-none"
-                />
+                <div className="relative flex items-center">
+                  <textarea
+                    id="chat-textarea"
+                    value={input}
+                    onChange={e => {
+                      setInput(e.target.value);
+                      const el = e.target;
+                      el.style.height = 'auto';
+                      el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+                    }}
+                    onFocus={handleInputFocus}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSend(e as any);
+                      }
+                    }}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck="false"
+                    rows={1}
+                    placeholder={isRecording ? "正在录音，点击右侧麦克风停止录音..." : "输入内容，Enter 发送"}
+                    disabled={isTranscribing}
+                    className="w-full bg-surface-card border border-divider rounded-2xl py-4 pl-5 pr-12 text-[15px] focus:outline-none focus:border-text-secondary transition-colors placeholder:text-text-secondary font-normal text-text-primary shadow-lg resize-none overflow-hidden scrollbar-none disabled:opacity-75"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleMicClick}
+                    disabled={isTranscribing}
+                    className={`absolute right-3.5 p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center
+                      ${isRecording 
+                        ? 'bg-brand-error text-white animate-pulse' 
+                        : 'text-text-secondary hover:text-text-primary hover:bg-divider/30'
+                      } disabled:opacity-50`}
+                  >
+                    {isTranscribing ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : isRecording ? (
+                      <MicOff className="w-5 h-5" />
+                    ) : (
+                      <Mic className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
+
               </div>
             </div>
           </>
