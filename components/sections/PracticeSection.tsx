@@ -328,33 +328,9 @@ export function PracticeSection() {
 
   // 语音播放 (TTS) 状态
   const [playingId, setPlayingId] = useState<string | null>(null);
-  const [playingText, setPlayingText] = useState<string | null>(null);
   const [playingLoadingId, setPlayingLoadingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  // 语音播放设置状态
-  const [ttsGender, setTtsGender] = useState<'female' | 'male'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('learniny_tts_gender') as 'female' | 'male') || 'female';
-    }
-    return 'female';
-  });
-  const [ttsSpeed, setTtsSpeed] = useState<'slow' | 'normal' | 'fast'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('learniny_tts_speed') as 'slow' | 'normal' | 'fast') || 'normal';
-    }
-    return 'normal';
-  });
-  const [showTtsSettings, setShowTtsSettings] = useState(false);
   const [asrError, setAsrError] = useState<string | null>(null);
-
-  useEffect(() => {
-    localStorage.setItem('learniny_tts_gender', ttsGender);
-  }, [ttsGender]);
-
-  useEffect(() => {
-    localStorage.setItem('learniny_tts_speed', ttsSpeed);
-  }, [ttsSpeed]);
 
   // 语音录音 (ASR) 状态
   const [isRecording, setIsRecording] = useState(false);
@@ -382,22 +358,27 @@ export function PracticeSection() {
     };
   }, []);
 
-  // 响应式语音朗读控制器：当播放的内容、性别或语速发生变化时，即时响应并播放
-  useEffect(() => {
-    if (!playingId || !playingText) {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
+  const handlePlayAudio = (id: string, text: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      console.warn('SpeechSynthesis is not supported in this browser.');
       return;
     }
 
-    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    // 1. 如果正在播当前这个，点击则停止
+    if (playingId === id) {
+      window.speechSynthesis.cancel();
+      setPlayingId(null);
+      return;
+    }
 
-    // 1. 停止当前正在播放的声音
+    // 2. 如果正在播放其他语音，先停止它
     window.speechSynthesis.cancel();
+    setPlayingId(null);
 
-    // 2. 清理文本：只朗读英文内容，过滤系统生成的标记和中文提示（如括号翻译）
-    const cleanedText = playingText
+    setPlayingLoadingId(id);
+
+    // 清理文本：只朗读英文内容，过滤系统生成的标记和中文提示（如括号翻译）
+    const cleanedText = text
       .replace(/\[CORRECTED:[\s\S]*?\]/g, '')
       .replace(/\[HINT:[\s\S]*?\]/g, '')
       .replace(/\[SCENARIO:[\s\S]*?\]/g, '')
@@ -407,92 +388,40 @@ export function PracticeSection() {
 
     if (!cleanedText) {
       setPlayingLoadingId(null);
-      setPlayingId(null);
-      setPlayingText(null);
       return;
     }
 
     const utterance = new SpeechSynthesisUtterance(cleanedText);
     utterance.lang = 'en-US'; // 设为美式英语
 
-    // 3. 设置朗读语速
-    let rateValue = 1.0;
-    if (ttsSpeed === 'slow') rateValue = 0.75;
-    if (ttsSpeed === 'fast') rateValue = 1.25;
-    utterance.rate = rateValue;
-
-    // 4. 寻找匹配性别的英文发音人
+    // 尝试寻找高质量的英文发音人
     const voices = window.speechSynthesis.getVoices();
-    const englishVoices = voices.filter(v => v.lang.startsWith('en'));
-    
-    let selectedVoice = null;
-    if (ttsGender === 'male') {
-      // 寻找英文男声
-      selectedVoice = englishVoices.find(v => 
-        v.name.toLowerCase().includes('male') || 
-        v.name.toLowerCase().includes('david') || 
-        v.name.toLowerCase().includes('mark') || 
-        v.name.toLowerCase().includes('daniel') ||
-        v.name.toLowerCase().includes('george') ||
-        v.name.toLowerCase().includes('ravi')
-      );
-    } else {
-      // 寻找英文女声
-      selectedVoice = englishVoices.find(v => 
-        v.name.toLowerCase().includes('female') || 
-        v.name.toLowerCase().includes('zira') || 
-        v.name.toLowerCase().includes('samantha') || 
-        v.name.toLowerCase().includes('karen') ||
-        v.name.toLowerCase().includes('google us english') ||
-        v.name.toLowerCase().includes('hazel')
-      );
-    }
-
-    // 兜底：如果找不到对应的性别，使用第一个英文发音人
-    if (!selectedVoice) {
-      selectedVoice = englishVoices[0];
-    }
-
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
+    const englishVoice = voices.find(v => v.lang.startsWith('en') && (
+      v.name.includes('Google') || 
+      v.name.includes('Natural') || 
+      v.name.includes('Microsoft') || 
+      v.name.includes('Samantha')
+    ));
+    if (englishVoice) {
+      utterance.voice = englishVoice;
     }
 
     utterance.onstart = () => {
       setPlayingLoadingId(null);
+      setPlayingId(id);
     };
 
     utterance.onend = () => {
       setPlayingId(null);
-      setPlayingText(null);
     };
 
     utterance.onerror = (e) => {
       console.error('[SpeechSynthesis Error]', e);
       setPlayingLoadingId(null);
       setPlayingId(null);
-      setPlayingText(null);
     };
 
     window.speechSynthesis.speak(utterance);
-  }, [playingId, playingText, ttsGender, ttsSpeed]);
-
-  const handlePlayAudio = (id: string, text: string) => {
-    if (typeof window === 'undefined' || !window.speechSynthesis) {
-      console.warn('SpeechSynthesis is not supported in this browser.');
-      return;
-    }
-
-    // 1. 如果正在播当前这个，点击则停止
-    if (playingId === id) {
-      setPlayingId(null);
-      setPlayingText(null);
-      return;
-    }
-
-    // 2. 设置状态，触发 useEffect 进行播放
-    setPlayingLoadingId(id);
-    setPlayingId(id);
-    setPlayingText(text);
   };
 
   const handleMicClick = async () => {
@@ -1065,118 +994,13 @@ export function PracticeSection() {
                 </button>
               </div>
 
-              <div className="flex items-center gap-2">
-                {/* TTS Quick Settings Button */}
-                <div className="relative">
-                  <button
-                    onClick={() => setShowTtsSettings(!showTtsSettings)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold tracking-wider uppercase transition-all duration-300 cursor-pointer border ${
-                      showTtsSettings 
-                        ? 'bg-brand-accent text-black border-brand-accent shadow-[0_0_12px_rgba(0,255,157,0.4)]'
-                        : 'bg-[#0e0e0e]/80 border-white/10 text-text-secondary hover:text-text-primary hover:bg-white/5'
-                    }`}
-                  >
-                    <span>🎧</span>
-                    <span className="hidden xs:inline">语音设置</span>
-                  </button>
-
-                  <AnimatePresence>
-                    {showTtsSettings && (
-                      <>
-                        {/* Click outside backdrop */}
-                        <div className="fixed inset-0 z-30" onClick={() => setShowTtsSettings(false)} />
-                        
-                        {/* Floating Settings Card */}
-                        <motion.div
-                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                          className="absolute right-0 mt-2 w-48 bg-[#0F0F0F] border border-white/10 rounded-2xl p-4 shadow-xl z-40 space-y-4 text-left pointer-events-auto"
-                        >
-                          {/* Gender */}
-                          <div className="space-y-1.5">
-                            <span className="text-[10px] font-mono tracking-wider text-text-secondary/60 uppercase block">发音人 / Voice</span>
-                            <div className="grid grid-cols-2 gap-1 bg-black/40 p-0.5 rounded-lg border border-white/5">
-                              <button
-                                onClick={() => setTtsGender('female')}
-                                className={`py-1 text-[11px] rounded-md transition-colors cursor-pointer ${
-                                  ttsGender === 'female'
-                                    ? 'bg-brand-accent text-[#000000] font-semibold'
-                                    : 'text-text-secondary hover:text-text-primary'
-                                }`}
-                              >
-                                👩 女声
-                              </button>
-                              <button
-                                onClick={() => setTtsGender('male')}
-                                className={`py-1 text-[11px] rounded-md transition-colors cursor-pointer ${
-                                  ttsGender === 'male'
-                                    ? 'bg-brand-accent text-[#000000] font-semibold'
-                                    : 'text-text-secondary hover:text-text-primary'
-                                }`}
-                              >
-                                👨 男声
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Speed */}
-                          <div className="space-y-1.5">
-                            <span className="text-[10px] font-mono tracking-wider text-text-secondary/60 uppercase block">朗读语速 / Speed</span>
-                            <div className="grid grid-cols-3 gap-0.5 bg-black/40 p-0.5 rounded-lg border border-white/5 text-[10px] text-center">
-                              <button
-                                onClick={() => setTtsSpeed('slow')}
-                                className={`py-1 rounded-md transition-colors cursor-pointer ${
-                                  ttsSpeed === 'slow'
-                                    ? 'bg-brand-accent text-[#000000] font-semibold'
-                                    : 'text-text-secondary hover:text-text-primary'
-                                }`}
-                              >
-                                🐢 慢
-                              </button>
-                              <button
-                                onClick={() => setTtsSpeed('normal')}
-                                className={`py-1 rounded-md transition-colors cursor-pointer ${
-                                  ttsSpeed === 'normal'
-                                    ? 'bg-brand-accent text-[#000000] font-semibold'
-                                    : 'text-text-secondary hover:text-text-primary'
-                                }`}
-                              >
-                                正常
-                              </button>
-                              <button
-                                onClick={() => setTtsSpeed('fast')}
-                                className={`py-1 rounded-md transition-colors cursor-pointer ${
-                                  ttsSpeed === 'fast'
-                                    ? 'bg-brand-accent text-[#000000] font-semibold'
-                                    : 'text-text-secondary hover:text-text-primary'
-                                }`}
-                              >
-                                🏃 快
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Helper Info Note */}
-                          <div className="pt-1.5 border-t border-white/5">
-                            <span className="text-[9px] text-text-secondary/50 block leading-relaxed">
-                              * 朗读使用浏览器原生发音。若您的系统未安装额外的男声音频包，切换后可能仍使用系统默认发音。
-                            </span>
-                          </div>
-                        </motion.div>
-                      </>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                <button
-                  onClick={() => setShowEndConfirm(true)}
-                  disabled={isEndingSession}
-                  className="px-3.5 py-1.5 bg-brand-error/5 hover:bg-brand-error/15 border border-brand-error/25 hover:border-brand-error/50 rounded-full text-[10px] font-bold text-brand-error tracking-wider uppercase transition-all duration-300 disabled:opacity-55 cursor-pointer shadow-[0_0_12px_rgba(255,75,75,0.05)] animate-pulse"
-                >
-                  {isEndingSession ? '结算中...' : '结束对话'}
-                </button>
-              </div>
+              <button
+                onClick={() => setShowEndConfirm(true)}
+                disabled={isEndingSession}
+                className="px-3.5 py-1.5 bg-brand-error/5 hover:bg-brand-error/15 border border-brand-error/25 hover:border-brand-error/50 rounded-full text-[10px] font-bold text-brand-error tracking-wider uppercase transition-all duration-300 disabled:opacity-55 cursor-pointer shadow-[0_0_12px_rgba(255,75,75,0.05)] animate-pulse"
+              >
+                {isEndingSession ? '结算中...' : '结束对话'}
+              </button>
             </div>
 
             {/* Chat Area */}
