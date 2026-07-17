@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Info } from 'lucide-react';
+import { Sparkles, Info, Loader2 } from 'lucide-react';
 
 interface SummaryModalProps {
   summaryData: {
@@ -11,12 +11,52 @@ interface SummaryModalProps {
     insight?: string;
     tags?: string[];
     isNotice?: boolean;
+    isLoading?: boolean;
   } | null;
   onClose: () => void;
 }
 
 export function SummaryModal({ summaryData, onClose }: SummaryModalProps) {
   if (!summaryData) return null;
+
+  if (summaryData.isLoading) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xl p-4 md:p-8 pointer-events-auto">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95, y: 15 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          className="w-full max-w-lg bg-[#0D0D0D] border border-brand-accent/20 rounded-3xl p-6 md:p-8 flex flex-col gap-6 shadow-[0_0_50px_rgba(0,255,157,0.15)] relative overflow-hidden"
+        >
+          <div className="absolute -top-24 -left-24 w-48 h-48 rounded-full blur-[80px] bg-brand-accent/10 pointer-events-none" />
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-brand-accent text-xs font-mono tracking-widest uppercase">
+              <Loader2 className="w-4 h-4 animate-spin text-brand-accent" />
+              <span>今日学习发现报告</span>
+            </div>
+            <h3 className="text-xl font-display text-text-primary tracking-wide leading-snug">
+              正在总结你的今日发现...
+            </h3>
+          </div>
+          <div className="h-px bg-divider" />
+          <div className="flex flex-col gap-4 py-4 items-center justify-center min-h-[160px]">
+            <Loader2 className="w-8 h-8 animate-spin text-brand-accent mb-4" />
+            <p className="text-xs text-text-secondary animate-pulse tracking-wide">
+              正在深入分析本轮对话记录，点亮学习星图...
+            </p>
+          </div>
+          <div className="h-px bg-divider" />
+          <div className="flex justify-end">
+            <button 
+              onClick={onClose}
+              className="px-6 py-2.5 bg-brand-accent/10 border border-brand-accent/30 rounded-2xl text-xs font-medium text-brand-accent cursor-pointer hover:bg-brand-accent/20 transition-all duration-300"
+            >
+              在后台运行
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   const { isNotice } = summaryData;
 

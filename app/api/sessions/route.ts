@@ -40,6 +40,43 @@ export async function POST(request: Request) {
       }, { status: 500 })
     }
 
+    // ZPD Dynamic Node Routing
+    let targetNodeId = knowledgeNodeId
+    if (module === 'english' && !targetNodeId && finalUserId && !finalUserId.startsWith('anon_')) {
+      try {
+        const { data: discoveries } = await supabase
+          .from('discoveries')
+          .select('knowledge_node_id')
+          .eq('user_id', finalUserId)
+        
+        const masteredNodes = new Set(discoveries?.map(d => d.knowledge_node_id) || [])
+        const orderedNodes = [
+          'self-intro',
+          'daily-routine',
+          'likes-dislikes',
+          'everyday-situations',
+          'question-asking',
+          'opinion-expression',
+          'comparing-discussing',
+          'storytelling',
+          'abstract-thinking'
+        ]
+        
+        // Find the first unmastered node
+        const nextNode = orderedNodes.find(node => !masteredNodes.has(node))
+        if (nextNode) {
+          targetNodeId = nextNode
+          console.log('[ZPD Dynamic Router] Next learning target node selected:', nextNode)
+        }
+      } catch (err) {
+        console.warn('Failed to calculate ZPD dynamic target node:', err)
+      }
+    }
+    
+    if (!targetNodeId) {
+      targetNodeId = moduleConfig.defaultKnowledgeNodeId
+    }
+
     // 创建会话
     const sessionId = uuidv4()
     const { data: session, error } = await supabase
@@ -49,7 +86,7 @@ export async function POST(request: Request) {
         user_id: finalUserId,
         status: 'started',
         theme: theme || moduleConfig.defaultTheme,
-        current_knowledge_node_id: knowledgeNodeId || moduleConfig.defaultKnowledgeNodeId,
+        current_knowledge_node_id: targetNodeId,
         round_count: 0,
         photo_count: 0,
         discovery_count: 0,

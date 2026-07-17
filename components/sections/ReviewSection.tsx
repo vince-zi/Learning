@@ -49,7 +49,7 @@ function renderFormattedText(text: string): React.ReactNode {
     <div style={{ wordBreak: 'break-word', lineHeight: '1.6' }}>
       {lines.map((line, lineIdx) => {
         const parts: React.ReactNode[] = [];
-        const tokenRegex = /(<u>\*\*(.*?)\*\*<\/u>|<u>(.*?)<\/u>|\*\*(.*?)\*\*)/gi;
+        const tokenRegex = /(<u>\*\*(.*?)\*\*<\/u>|<u>(.*?)<\/u>|~~\s*\[-\s*(.*?)\s*\]\s*~~|~~\s*(.*?)\s*~~|\*\*\s*\[\+\s*(.*?)\s*\]\s*\*\*|\*\*(.*?)\*\*)/gi;
         let lastIndex = 0;
         let match;
 
@@ -71,10 +71,28 @@ function renderFormattedText(text: string): React.ReactNode {
                 {match[3]}
               </u>
             );
+          } else if (match[0].startsWith('~~[-') || match[0].startsWith('~~ [-')) {
+            parts.push(
+              <del key={index} style={{ textDecoration: 'line-through', color: tokens.coral, opacity: 0.85, margin: '0 2px' }}>
+                {match[4]}
+              </del>
+            );
+          } else if (match[0].startsWith('~~')) {
+            parts.push(
+              <del key={index} style={{ textDecoration: 'line-through', color: tokens.coral, opacity: 0.85, margin: '0 2px' }}>
+                {match[5]}
+              </del>
+            );
+          } else if (match[0].startsWith('**[+') || match[0].startsWith('** [+')) {
+            parts.push(
+              <strong key={index} style={{ fontWeight: 'bold', color: tokens.gold, textShadow: '0 0 8px rgba(0, 255, 157, 0.25)', margin: '0 2px' }}>
+                {match[6]}
+              </strong>
+            );
           } else if (match[0].startsWith('**')) {
             parts.push(
               <strong key={index} style={{ fontWeight: 'bold', color: tokens.textPrimary }}>
-                {match[4]}
+                {match[7]}
               </strong>
             );
           }
@@ -322,6 +340,9 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "100%",
+          maxHeight: "90vh",
+          display: "flex",
+          flexDirection: "column",
           background: "rgba(13, 13, 13, 0.85)",
           backdropFilter: "blur(24px)",
           WebkitBackdropFilter: "blur(24px)",
@@ -385,178 +406,184 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
 
         {stage < 2 ? (
           <>
-            {/* dialogue context — when and where the error happened */}
-            {record.dialogueContext && (
-              <div style={{ fontSize: 12, color: tokens.textSecondary, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ opacity: 0.6 }}>💬</span>
-                <span>{record.dialogueContext}</span>
-              </div>
-            )}
-
-            <div style={{ fontSize: 13, color: tokens.textSecondary, marginBottom: 8 }}>
-              {stage === 0 ? "试着润色这句话：" : "场景重组 · 请在全新的场景下自然使用："}
-            </div>
-            <div
-              style={{
-                borderRadius: 10,
-                fontSize: 15,
-                fontFamily: "Inter, sans-serif",
-                lineHeight: 1.5,
-                marginBottom: 16,
-              }}
-            >
-              {stage === 0 ? (
-                <div style={{
-                  background: tokens.surfaceCard,
-                  borderRadius: 10,
-                  padding: "14px 16px",
-                  color: tokens.coral,
-                }}>
-                  {record.original}
+            {/* Scrollable Body Content */}
+            <div className="scrollbar-none" style={{ flex: 1, overflowY: "auto", paddingRight: 4, marginBottom: 16 }}>
+              {/* dialogue context — when and where the error happened */}
+              {record.dialogueContext && (
+                <div style={{ fontSize: 12, color: tokens.textSecondary, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ opacity: 0.6 }}>💬</span>
+                  <span>{record.dialogueContext}</span>
                 </div>
-              ) : (
-                renderAiTaskWithColors(record.reviewScenario || aiTask || "加载新场景中...")
+              )}
+
+              <div style={{ fontSize: 13, color: tokens.textSecondary, marginBottom: 8 }}>
+                {stage === 0 ? "试着润色这句话：" : "场景重组 · 请在全新的场景下自然使用："}
+              </div>
+              <div
+                style={{
+                  borderRadius: 10,
+                  fontSize: 15,
+                  fontFamily: "Inter, sans-serif",
+                  lineHeight: 1.5,
+                  marginBottom: 16,
+                }}
+              >
+                {stage === 0 ? (
+                  <div style={{
+                    background: tokens.surfaceCard,
+                    borderRadius: 10,
+                    padding: "14px 16px",
+                    color: tokens.coral,
+                  }}>
+                    {record.original}
+                  </div>
+                ) : (
+                  renderAiTaskWithColors(record.reviewScenario || aiTask || "加载新场景中...")
+                )}
+              </div>
+
+              {/* first-round inline grammar explanation */}
+              {stage === 0 && record.explanation && (
+                <div
+                  style={{
+                    background: tokens.tealSoft,
+                    border: `1px solid ${tokens.teal}33`,
+                    borderRadius: 8, padding: "10px 12px", marginBottom: 14,
+                    fontSize: 12, color: tokens.textSecondary, lineHeight: 1.6,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>
+                      <span style={{ color: tokens.teal, fontWeight: 600, marginRight: 4 }}>语言灵感</span>
+                      {record.explanation}
+                    </span>
+                    <button
+                      onClick={() => setShowClue(!showClue)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: tokens.gold,
+                        fontSize: 11,
+                        fontFamily: 'Inter, sans-serif',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        marginLeft: 8,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {showClue ? '收起线索' : '💡 获取线索'}
+                    </button>
+                  </div>
+                  {showClue && (
+                    <div style={{
+                      marginTop: 8,
+                      padding: '8px 10px',
+                      background: tokens.goldSoft,
+                      borderRadius: 6,
+                      color: tokens.textPrimary,
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                    }}>
+                      <div>💡 {getClueForErrorType(record.category, record.original)}</div>
+                      {record.fixed && record.fixed !== '待 AI 修正...' && (
+                        <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed rgba(255, 255, 255, 0.1)', color: tokens.gold }}>
+                          👉 参考表达：{record.fixed}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 错误提示气泡：高对比珊瑚红 */}
+              {aiFeedback && (
+                <div style={{
+                  background: tokens.coralSoft,
+                  border: `1.5px solid ${tokens.coral}`,
+                  color: tokens.textPrimary,
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  marginBottom: 12,
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                }}>
+                  <span style={{ fontWeight: 'bold', color: tokens.coral }}>🌱 还可以说得更地道，试着调整一下：</span>
+                  <div style={{ marginTop: 8 }}>{renderFormattedText(aiFeedback)}</div>
+                </div>
+              )}
+
+              {/* 成功提示气泡：高对比金色/绿色 */}
+              {successMessage && (
+                <div style={{
+                  background: tokens.goldSoft,
+                  border: `1.5px solid ${tokens.gold}`,
+                  color: tokens.textPrimary,
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  marginBottom: 12,
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                }}>
+                  <span style={{ fontWeight: 'bold', color: tokens.gold }}>{successMessage}</span>
+                </div>
               )}
             </div>
 
-            {/* first-round inline grammar explanation */}
-            {stage === 0 && record.explanation && (
-              <div
+            {/* Pinned Input Area */}
+            <div style={{ flexShrink: 0, width: "100%" }}>
+              <textarea
+                key={stage === 0 ? "stage-0-input" : "stage-1-input"}
+                value={inputValue}
+                onChange={e => setInputValue(e.target.value)}
+                placeholder={stage === 0 ? "输入润色后的更地道句子..." : "在全新场景中自然作答..."}
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                disabled={isLoading || !sessionId}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
+                rows={3}
                 style={{
-                  background: tokens.tealSoft,
-                  border: `1px solid ${tokens.teal}33`,
-                  borderRadius: 8, padding: "10px 12px", marginBottom: 14,
-                  fontSize: 12, color: tokens.textSecondary, lineHeight: 1.6,
+                  width: "100%",
+                  background: "transparent",
+                  border: `1px solid ${tokens.divider}`,
+                  borderRadius: 10,
+                  padding: "12px 14px",
+                  marginBottom: 18,
+                  color: tokens.textPrimary,
+                  fontSize: 14,
+                  outline: 'none',
+                  resize: 'none',
+                  fontFamily: 'Inter, sans-serif',
+                  lineHeight: 1.5,
+                }}
+              />
+              <button
+                onClick={handleSubmit}
+                disabled={isLoading || !sessionId || !inputValue.trim()}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: tokens.gold,
+                  color: "#181410",
+                  fontFamily: "Inter, sans-serif",
+                  fontWeight: 600,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: 8,
+                  opacity: (isLoading || !sessionId || !inputValue.trim()) ? 0.6 : 1,
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>
-                    <span style={{ color: tokens.teal, fontWeight: 600, marginRight: 4 }}>语言灵感</span>
-                    {record.explanation}
-                  </span>
-                  <button
-                    onClick={() => setShowClue(!showClue)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: tokens.gold,
-                      fontSize: 11,
-                      fontFamily: 'Inter, sans-serif',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      marginLeft: 8,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {showClue ? '收起线索' : '💡 获取线索'}
-                  </button>
-                </div>
-                {showClue && (
-                  <div style={{
-                    marginTop: 8,
-                    padding: '8px 10px',
-                    background: tokens.goldSoft,
-                    borderRadius: 6,
-                    color: tokens.textPrimary,
-                    fontSize: 12,
-                    lineHeight: 1.5,
-                  }}>
-                    <div>💡 {getClueForErrorType(record.category, record.original)}</div>
-                    {record.fixed && record.fixed !== '待 AI 修正...' && (
-                      <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed rgba(255, 255, 255, 0.1)', color: tokens.gold }}>
-                        👉 参考表达：{record.fixed}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 错误提示气泡：高对比珊瑚红 */}
-            {aiFeedback && (
-              <div style={{
-                background: tokens.coralSoft,
-                border: `1.5px solid ${tokens.coral}`,
-                color: tokens.textPrimary,
-                borderRadius: 8,
-                padding: "10px 12px",
-                marginBottom: 12,
-                fontSize: 13,
-                lineHeight: 1.5,
-              }}>
-                <span style={{ fontWeight: 'bold', color: tokens.coral }}>🌱 还可以说得更地道，试着调整一下：</span>
-                <div style={{ marginTop: 8 }}>{renderFormattedText(aiFeedback)}</div>
-              </div>
-            )}
-
-            {/* 成功提示气泡：高对比金色/绿色 */}
-            {successMessage && (
-              <div style={{
-                background: tokens.goldSoft,
-                border: `1.5px solid ${tokens.gold}`,
-                color: tokens.textPrimary,
-                borderRadius: 8,
-                padding: "10px 12px",
-                marginBottom: 12,
-                fontSize: 13,
-                lineHeight: 1.5,
-              }}>
-                <span style={{ fontWeight: 'bold', color: tokens.gold }}>{successMessage}</span>
-              </div>
-            )}
-
-            <textarea
-              key={stage === 0 ? "stage-0-input" : "stage-1-input"}
-              value={inputValue}
-              onChange={e => setInputValue(e.target.value)}
-              placeholder={stage === 0 ? "输入润色后的更地道句子..." : "在全新场景中自然作答..."}
-              autoComplete="off"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              disabled={isLoading || !sessionId}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
-              rows={3}
-              style={{
-                width: "100%",
-                background: "transparent",
-                border: `1px solid ${tokens.divider}`,
-                borderRadius: 10,
-                padding: "12px 14px",
-                marginBottom: 18,
-                color: tokens.textPrimary,
-                fontSize: 14,
-                outline: 'none',
-                resize: 'none',
-                fontFamily: 'Inter, sans-serif',
-                lineHeight: 1.5,
-              }}
-            />
-            <button
-              onClick={handleSubmit}
-              disabled={isLoading || !sessionId || !inputValue.trim()}
-              style={{
-                width: "100%",
-                padding: "12px",
-                borderRadius: 10,
-                border: "none",
-                background: tokens.gold,
-                color: "#181410",
-                fontFamily: "Inter, sans-serif",
-                fontWeight: 600,
-                fontSize: 14,
-                cursor: "pointer",
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                gap: 8,
-                opacity: (isLoading || !sessionId || !inputValue.trim()) ? 0.6 : 1,
-              }}
-            >
-              {isLoading && <Loader2 size={16} className="animate-spin" />}
-              {stage === 0 ? "完成润色，前往场景挑战" : "融会贯通，点亮此表达"}
-            </button>
+                {isLoading && <Loader2 size={16} className="animate-spin" />}
+                {stage === 0 ? "完成润色，前往场景挑战" : "融会贯通，点亮此表达"}
+              </button>
+            </div>
           </>
         ) : (
           <div style={{ textAlign: "center", padding: "12px 0 4px" }}>

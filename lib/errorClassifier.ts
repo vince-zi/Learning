@@ -335,6 +335,9 @@ export function generateStepByStepCritique(
     analysisLines.push(...typos)
   }
 
+  const diffDisplay = generateWordLevelDiff(userAttempt, correctSentence)
+  analysisLines.unshift(`   - 📊 **改写对比（红/绿差分）**：${diffDisplay}`)
+
   const steps: string[] = []
   steps.push(`接近了！让我们来逐项分析你的修改：`)
   steps.push(`1: **单词与拼写检测**：\n\n${analysisLines.length > 0 ? analysisLines.join('\n') : '   - 拼写与词汇大体正确。'}`)
@@ -349,6 +352,51 @@ export function generateStepByStepCritique(
   steps.push(`4: **下一步行动**：\n\n   - 请结合第 1 步的词汇提示与第 2 步的语法结构公式，对句子进行修正，然后再次提交吧！`)
 
   return steps.join('\n\n')
+}
+
+/**
+ * Word-level Longest Common Subsequence (LCS) Diff
+ * Computes word alignment and outputs red/green diff format.
+ * Red format: ~~[- word]~~
+ * Green format: **[+ word]**
+ */
+export function generateWordLevelDiff(attempt: string, correct: string): string {
+  const cleanWord = (w: string) => w.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "").trim().toLowerCase();
+  
+  const attemptWords = attempt.split(/\s+/).filter(Boolean);
+  const correctWords = correct.split(/\s+/).filter(Boolean);
+
+  const n = attemptWords.length;
+  const m = correctWords.length;
+  const dp: number[][] = Array(n + 1).fill(0).map(() => Array(m + 1).fill(0));
+
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      if (cleanWord(attemptWords[i - 1]) === cleanWord(correctWords[j - 1])) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+
+  let i = n, j = m;
+  const diffParts: string[] = [];
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && cleanWord(attemptWords[i - 1]) === cleanWord(correctWords[j - 1])) {
+      diffParts.push(correctWords[j - 1]);
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      diffParts.push(`**[+ ${correctWords[j - 1]}]**`);
+      j--;
+    } else {
+      diffParts.push(`~~[- ${attemptWords[i - 1]}]~~`);
+      i--;
+    }
+  }
+
+  return diffParts.reverse().join(' ');
 }
 
 

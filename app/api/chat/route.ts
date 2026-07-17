@@ -225,8 +225,63 @@ export async function POST(request: Request) {
     const sessionModule = sessionData.module || module || 'photography'
     const sessionTheme = sessionData.theme || ''
     const isEnglish = sessionModule === 'english'
+    
+    // --- 1.0.5 加载长期记忆 KV 插槽 (Load long-term memory KV slots) ---
+    const sessionUserId = sessionData.user_id || effectiveUserId
+    let memoryKv: Record<string, any> = {}
+    let activeMemoryKv: Record<string, any> = {}
+    if (isEnglish && sessionUserId && !sessionUserId.startsWith('anon_')) {
+      try {
+        const { data: profileData } = await supabase
+          .from('english_learner_profiles')
+          .select('learning_context_kv')
+          .eq('user_id', sessionUserId)
+          .maybeSingle()
+        if (profileData && profileData.learning_context_kv) {
+          memoryKv = profileData.learning_context_kv as Record<string, any>
+          const now = Date.now()
+          for (const [key, valObj] of Object.entries(memoryKv)) {
+            if (valObj && typeof valObj === 'object' && 'val' in valObj && 't' in valObj) {
+              const ageDays = (now - Number(valObj.t)) / (1000 * 60 * 60 * 24)
+              if (ageDays <= 14) {
+                activeMemoryKv[key] = valObj.val
+              }
+            } else {
+              activeMemoryKv[key] = valObj
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch learning_context_kv:', err)
+      }
+    }
     const isAssessment = isEnglish && (sessionTheme === 'English Level Placement Assessment' || sessionData.current_knowledge_node_id === 'placement-assessment')
     const activeIsAssessment = isAssessment && !continueChatting
+
+    const sessionHistory: Message[] = (historyMessages || []).map((m: any) => ({
+      id: m.id,
+      sessionId: m.session_id,
+      role: m.role,
+      messageType: m.message_type,
+      content: m.content,
+      relatedPhotoId: m.related_photo_id,
+      metadata: {
+        roundNumber: m.round_number,
+        ...(m.metadata || {}),
+      },
+      createdAt: m.created_at,
+    }))
+
+    let isInitSignal = false
+    let processedUserMessage = userMessage
+    if (userMessage === '[INIT_FREE_CONVERSATION]') {
+      isInitSignal = true
+      processedUserMessage = 'Hi!'
+    }
+
+    const englishDiag = isEnglish && !isInitSignal
+      ? diagnoseEnglishResponse(processedUserMessage, sessionHistory)
+      : null
 
     const queryNodeId = sessionData.current_knowledge_node_id || (isEnglish ? 'self-intro' : 'visual-focus')
     const isReviewMode = isEnglish && (sessionTheme === '全局温习' || sessionTheme.startsWith('温习: '))
@@ -421,6 +476,90 @@ export async function POST(request: Request) {
       }
     }
 
+    // --- 1.7 整合长期记忆到 prompt 上下文 (Merge activeMemoryKv into userContextPrompt) ---
+    if (isEnglish && Object.keys(activeMemoryKv).length > 0) {
+      const memoryString = Object.entries(activeMemoryKv)
+        .map(([k, v]) => `- ${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+        .join('\n')
+      userContextPrompt = `[User's Persistent Memory (Core facts/topics mentioned previously)]:\n${memoryString}` + (userContextPrompt ? '\n\n' + userContextPrompt : '')
+    }
+
+    // --- 1.8 门控专家路由评估 (Agent Router / MoE Gating) ---
+    let determinedLevel: 'A1-A2' | 'B1-B2' | 'C1-C2' = 'A1-A2'
+    let expertType: 'greeting' | 'lite_chat' | 'linguistic_coach' = 'linguistic_coach'
+    let selectedTopicName = ''
+
+    if (isEnglish) {
+      // 1.8.1 确定用户水平等级
+      if (globalNodeErrors && globalNodeErrors.length > 0) {
+        const hasComplexErrors = globalNodeErrors.some(e => 
+          e.error_type === 'clause-error' || 
+          e.error_type === 'preposition-collocation' || 
+          e.error_type === 'vocabulary-misuse'
+        )
+        if (globalNodeErrors.length > 8 || hasComplexErrors) {
+          determinedLevel = 'B1-B2'
+        }
+        const hasAdvancedErrors = globalNodeErrors.some(e => e.severity === 'advanced' || e.error_type === 'style-register')
+        if (hasAdvancedErrors) {
+          determinedLevel = 'C1-C2'
+        }
+      }
+      if (globalNodeDiscoveries && globalNodeDiscoveries.length > 0) {
+        const hasMidNode = globalNodeDiscoveries.some(d => 
+          d.knowledge_node_id === 'opinion-expression' || 
+          d.knowledge_node_id === 'comparing-discussing' || 
+          d.knowledge_node_id === 'storytelling'
+        )
+        const hasHighNode = globalNodeDiscoveries.some(d => d.knowledge_node_id === 'abstract-thinking')
+        if (hasHighNode) {
+          determinedLevel = 'C1-C2'
+        } else if (hasMidNode && determinedLevel === 'A1-A2') {
+          determinedLevel = 'B1-B2'
+        }
+      }
+
+      // 1.8.2 分流路由判断
+      const lowercaseUserMsg = userMessage.trim().toLowerCase()
+      const commonGreetings = ['hi', 'hello', 'hey', 'hallo', 'good morning', 'good afternoon', 'good evening', 'bye', 'goodbye']
+      const isGreeting = userMessage === '[INIT_FREE_CONVERSATION]' || commonGreetings.includes(lowercaseUserMsg) || (userMessage.split(/\s+/).length <= 1 && commonGreetings.some(g => lowercaseUserMsg.startsWith(g)))
+
+      const isSimpleChat = !isReviewMode && !isPracticeMode && !activeIsAssessment && !isGreeting
+      const localErrorsCount = englishDiag?.errorsInResponse?.length || 0
+      const userWordCount = userMessage.trim().split(/\s+/).filter((w: string) => w.length > 0).length
+
+      if (isGreeting) {
+        expertType = 'greeting'
+        
+        // 获取开场白话题
+        const topics = [
+          { id: 'hobbies', name: 'Hobbies & Free-time activities (what they do on weekends)' },
+          { id: 'movies', name: 'Entertainment (movies, books, music)' },
+          { id: 'travel', name: 'Travel & Places (favorite cities, vacation plans)' },
+          { id: 'sports', name: 'Sports & Outdoors (hiking, basketball, working out)' },
+          { id: 'pets', name: 'Pets & Animals (dogs, cats)' },
+          { id: 'weather', name: 'Weather & Seasons (current weather, favorite season)' },
+          { id: 'routines', name: 'Daily routines (morning routines, habits)' },
+          { id: 'goals', name: 'Future plans or goals' },
+          { id: 'food', name: 'Food, drinks, or favorite restaurants' }
+        ]
+        const hasFoodContext = /coffee|sugar|food|eat|drink|dinner|lunch|breakfast|restaurant|cafe/i.test(userContextPrompt)
+        const availableTopics = hasFoodContext ? topics.filter(t => t.id !== 'food') : topics
+        
+        let hash = 0
+        for (let i = 0; i < sessionId.length; i++) {
+          hash = sessionId.charCodeAt(i) + ((hash << 5) - hash)
+        }
+        const selectedTopic = availableTopics[Math.abs(hash) % availableTopics.length]
+        selectedTopicName = selectedTopic ? selectedTopic.name : 'Hobbies'
+      } else if (isSimpleChat && localErrorsCount === 0 && userWordCount < 8) {
+        expertType = 'lite_chat'
+      } else {
+        expertType = 'linguistic_coach'
+      }
+      console.log('[Agent Router dispatch]', { expertType, userMessage, localErrorsCount, userWordCount, determinedLevel })
+    }
+
     const activeSystemPrompt = (isEnglish ? ENGLISH_SYSTEM_PROMPT : SYSTEM_PROMPT) +
       (userContextPrompt ? `\n\n## USER HISTORICAL DATA CONTEXT:\nUse the following user data to customize the review or practice. Check if they made progress:\n${userContextPrompt}` : '')
     const questioningStyle = sessionData.questioning_style || 'gentle'
@@ -455,21 +594,22 @@ You must act as a Gentle Guide. Use encouraging, patient, and warm tones. Use in
         systemPromptForThisRequest = systemPromptForThisRequest
           .replace(
             /1\. \*\*English-First with Chinese Help When Needed[\s\S]*?(?=\n2\. \*\*)/,
-            `1. **中英双语 — 中文讲解**：
-   - 英文进行对话和提问，但所有的语法错误讲解与中文注解必须收拢到末尾的 [HINT:] 标签中，绝不在对话文本的主体中（包括括号内）给语法错误写任何中文注解。
-   - 遇到复杂词汇或长句时可以在后面加括号提供中文翻译（例如："He spilled the beans (泄露了秘密)。"）。`
+            `1. **中英双语 — 丰富中文辅助**：
+   - 英文进行对话和提问。为了帮助低基础用户，你必须在英语回复的主体中，针对**每个关键动词、核心动词短语、核心名词、或是稍微复杂的短语/句子**，在后面加括号直接标注中文释释（例如："I am reading (正在阅读) a novel (小说)."，"Did you make (做出) a choice (选择)?"，"spilled the beans (泄露了秘密)"）。
+   - 确保每句回复中都有这类括号中文辅助，降低用户的阅读门槛。所有的语法错误讲解与中文语法注解必须收拢到末尾的 [HINT:] 标签中。`
           )
           .replace(
             /2\. \*\*Clear Grammar Explanations[\s\S]*?(?=\n3\. \*\*)/,
             `2. **语法讲解收拢**：
-   - 绝对禁止在对话主体的英文句子中（包括任何括号）进行直接的语法讲授或中文提示。所有的语法纠正解释必须写在末尾的 [HINT:] 标签里。`
+   - 绝对禁止在对话主体的英文句子中（包括任何括号）进行直接的语法讲授或中文提示。所有的语法纠正解释必须写在末尾的 [HINT:] 标签里。但词汇、短语的中文含义括号辅助是强制要求的。`
           )
           .replace(
             /4\. \*\*[\s\S]*?(?=\n5\. \*\*)/,
-            `4. **温和纠错（纯 Recast）**：
-   - 当用户犯错时，绝对不要说 "That's wrong" 或在英文对话中插播语法说明。在回复中自然重复正确形式（Recast）即可。所有的语法点病因分析与改正规则讲解，必须全部放到 [HINT:] 标签中。例如：
-   - 用户："I go to the store yesterday."
-   - 你的回复主体："Oh, you went to the store yesterday! What did you buy? 🛒"（不带任何括号提示或解释）
+            `4. **温和纠错（纯 Recast）与句法保留原则**：
+   - 当用户犯错时，绝对不要说 "That's wrong" 或在英文对话中插播语法说明。在回复中自然重复正确形式（Recast）即可。所有的语法点病因分析与改正规则讲解，必须全部放到 [HINT:] 标签中。
+   - **句法保留原则**：纠错和复述时，**必须尊重并顺着用户的句型与词汇来说**。绝对不要把用户的句子完全重写为另一个结构完全不同的“更地道短语”。你只需纠正该句型内的**语法错误**（如时态、介词、单复数），让用户学会在他们自己选择的句式框架下如何正确表达。
+   - 例如：用户："I go to the store yesterday."
+   - 你的回复主体："Oh, you went (去) to the store (商店) yesterday! What did you buy (买)? 🛒"（带词义括号辅助，但不带任何语法纠错解释）
    - 你的回复末尾追加：[CORRECTED: I went to the store yesterday.] [HINT: 昨天的事情要用过去时 went，而不是 go。]`
           )
       } else if (isBalancedPref) {
@@ -488,8 +628,9 @@ You must act as a Gentle Guide. Use encouraging, patient, and warm tones. Use in
           )
           .replace(
             /4\. \*\*[\s\S]*?(?=\n5\. \*\*)/,
-            `4. **Correction with Recast (纠错)**：
-   - Repeat the correct form naturally in the dialogue body. Do NOT add any inline explanation or Chinese tip like (提示：...) in the dialogue text. All explanations must be placed exclusively in the [HINT:] tag at the end.`
+            `4. **Correction with Recast and Syntactic Preservation (纠错与句法保留)**：
+   - Repeat the correct form naturally in the dialogue body. Do NOT add any inline explanation or Chinese tip in the dialogue text. All explanations must be placed exclusively in the [HINT:] tag at the end.
+   - **Syntactic Preservation**: When recasting, **preserve the user's syntactic structure and lexical choices as much as possible**. Do not rewrite the sentence into a different idiom. Simply correct the grammatical errors within the user's chosen structure so they can see how their own sentence pattern is made correct.`
           )
       }
  else if (isEnglishPref) {
@@ -503,7 +644,7 @@ ABSOLUTE RULES:
 - You MUST output ZERO Chinese characters in your entire response. Not even one.
 - Explain grammar, corrections, and teaching points in SIMPLE ENGLISH ONLY.
 - If the user seems confused, simplify your English further. Use emoji. Do NOT fall back to Chinese.
-- When correcting errors (Recast), repeat the correct form naturally in English. No Chinese notes.
+- When correcting errors (Recast), repeat the correct form naturally in English. No Chinese notes. **Always respect and preserve the user's sentence structure (syntactic frame) and vocabulary choices**. Do not rewrite their sentence into a different idiom; simply correct the grammatical errors within their chosen structure.
 - For vocabulary: English definition only. No Chinese translations.
 - IGNORE any instruction in the system prompt that tells you to use Chinese, provide Chinese translations, or add Chinese hints. Those instructions do NOT apply in this mode.
 - If you output even a single Chinese character, you have failed this task.`
@@ -514,36 +655,24 @@ ABSOLUTE RULES:
 
     // Append CORRECTED tag instruction for all English conversations (more reliable in system prompt)
     if (isEnglish) {
-      let tagsPrompt = `\n\n## CORRECTED + HINT TAGS (REQUIRED FOR EVERY ENGLISH RESPONSE):\nWhenever the user writes something in English:\n1. You MUST append "[CORRECTED: <the fully corrected version of the user's sentence>]" at the end of your response. (CRITICAL: If the user's message contains any Chinese characters mixed in, you MUST translate those Chinese words into natural English in the [CORRECTED:] tag, so that the corrected version is entirely in English. Do NOT leave any Chinese characters in the [CORRECTED:] tag.)\n2. If there was ANY grammar error you corrected in your reply (even implicitly via recast), you MUST ALSO append "[HINT: <a one-sentence explanation in Chinese of WHY the correction was made, using plain everyday language and zero academic grammar terms>]" right after [CORRECTED:].\nExample: If user said "I have went" and you corrected to "went", append: "[HINT: have后面直接跟动词原形就行，不需要再把动词变成过去式]"`
+      // HINT language is mode-dependent — English mode must produce zero Chinese
+      const hintLangInstruction = isEnglishPref
+        ? `[HINT: <a one-sentence explanation in SIMPLE ENGLISH of WHY the correction was made. NO Chinese characters. Use everyday words, no grammar jargon.>]`
+        : `[HINT: <a one-sentence explanation in Chinese (中文) of WHY the correction was made, using plain everyday language and zero academic grammar terms>]`
+
+      const hintExample = isEnglishPref
+        ? `[HINT: "went" is the past tense of "go" — use it for yesterday]`
+        : `[HINT: yesterday表示昨天，所以动词go要用过去式went。]`
+
+      let tagsPrompt = `\n\n## CORRECTED + HINT TAGS (REQUIRED FOR EVERY ENGLISH RESPONSE):\nWhenever the user writes something in English:\n1. You MUST append "[CORRECTED: <the fully corrected version of the user's sentence>]" at the end of your response. (CRITICAL: If the user's message contains any Chinese characters mixed in, you MUST translate those Chinese words into natural English in the [CORRECTED:] tag, so that the corrected version is entirely in English. Do NOT leave any Chinese characters in the [CORRECTED:] tag.)\n2. If there was ANY grammar error you corrected in your reply (even implicitly via recast), you MUST ALSO append "${hintLangInstruction}" right after [CORRECTED:].\nExample: If user said "I go yesterday" and you corrected to "I went yesterday", append: "${hintExample}"\n3. (CRITICAL LOGICAL CONSISTENCY) The explanation in [HINT:] must be 100% logically consistent with the corrected sentence in [CORRECTED:]. For example, if you added "one" to the end of the sentence, do NOT say "no need to add one" in the hint. Double-check your explanation logic before outputting.\n4. If you appended [CORRECTED:], you MUST ALSO append "[SCENARIO: <a similar but different sentence testing the same grammar point, in Chinese> | <its correct English translation>]" right after [HINT:]. This will be used for the student's translation challenge.\nExample: If user said "I go yesterday" and you corrected to "I went yesterday", append: "[SCENARIO: 我昨天买了一本书。| I bought a book yesterday.]"\nNote: The [SCENARIO:] tag is a system-level metadata tag. It MUST always be in Chinese (中文) for the Chinese part because it is used for the database review challenge, even in PURE ENGLISH mode. Double check that it contains exactly one pipe character ("|") separating the Chinese and English.\n5. [MEMORY STORAGE] If the user mentions any personal facts about their life (e.g. job, hobbies, pets, preferences, plans) in their message, you MUST ALSO append "[MEMORY: {"key": "value"}]" containing that fact to save it to their profile. Example: If they say "I have a cat", append "[MEMORY: {"has_pet": "cat"}]". Keep keys and values short, simple, and factual.`
       if (isReviewMode) {
-        tagsPrompt += `\n3. [CRITICAL FOR REVIEW MODE] If you determine the user has successfully resolved/corrected the error (Stage 1) or correctly applied the rule under the new scenario (Stage 2), you MUST ALSO append "[RESOLVED: ${targetErrorToReview ? targetErrorToReview.original_text : ''}]" at the very end of your response (after [HINT:]). This is mandatory to advance their progress.`
+        tagsPrompt += `\n6. [CRITICAL FOR REVIEW MODE] If you determine the user has successfully resolved/corrected the error (Stage 1) or correctly applied the rule under the new scenario (Stage 2), you MUST ALSO append "[RESOLVED: ${targetErrorToReview ? targetErrorToReview.original_text : ''}]" at the very end of your response (after [HINT:]). This is mandatory to advance their progress.`
       }
       finalSystemPrompt += tagsPrompt
     }
 
     const activeKnowledgeGraph = isEnglish ? englishKnowledgeGraph : photographyKnowledgeGraph
     const defaultNodeId = isEnglish ? 'self-intro' : 'visual-focus'
-
-    const sessionHistory: Message[] = (historyMessages || []).map((m: any) => ({
-      id: m.id,
-      sessionId: m.session_id,
-      role: m.role,
-      messageType: m.message_type,
-      content: m.content,
-      relatedPhotoId: m.related_photo_id,
-      metadata: {
-        roundNumber: m.round_number,
-        ...(m.metadata || {}),
-      },
-      createdAt: m.created_at,
-    }))
-
-    let isInitSignal = false
-    let processedUserMessage = userMessage
-    if (userMessage === '[INIT_FREE_CONVERSATION]') {
-      isInitSignal = true
-      processedUserMessage = 'Hi!'
-    }
 
     // --- 2. 记录用户消息 ---
     if (!isInitSignal) {
@@ -559,11 +688,6 @@ ABSOLUTE RULES:
     // --- 3. 引擎层诊断（根据模块选择不同的诊断逻辑）---
     const diagResult = diagnose(processedUserMessage, sessionHistory, 3)
 
-    // 英语模块：额外的英语错误诊断
-    const englishDiag = isEnglish && !isInitSignal
-      ? diagnoseEnglishResponse(processedUserMessage, sessionHistory)
-      : null
-
     console.log('[API Chat debug]', {
       processedUserMessage,
       userMessage,
@@ -571,11 +695,8 @@ ABSOLUTE RULES:
       hasDiag: !!englishDiag,
       errorsCount: englishDiag?.errorsInResponse?.length || 0,
       errors: englishDiag?.errorsInResponse
-    });
+    })
 
-    // 错误记录的持久化移至 AI 回复生成之后进行，以便保存提取的 corrected_text
-
-    // --- 4. 脚手架调节 ---
     const regulation = regulate({
       currentScaffoldLevel: 1,
       knowledgeEstimate: englishDiag ? Math.max(0.3, (englishDiag.accuracyScore || 0) * 0.5 + (englishDiag.complexityScore || 0) * 0.5) : diagResult.knowledgeEstimate,
@@ -734,7 +855,7 @@ Ask only one challenge. Keep it encouraging.${showChooseLangHint ? '\n\n⚠️ I
 
           const isSimpleGreeting = processedUserMessage.split(/\s+/).length < 5 && !processedUserMessage.includes('?')
 
-          let determinedLevel: 'A1-A2' | 'B1-B2' | 'C1-C2' = 'A1-A2'
+          determinedLevel = 'A1-A2'
           if (globalNodeErrors && globalNodeErrors.length > 0) {
             const hasComplexErrors = globalNodeErrors.some(e => 
               e.error_type === 'clause-error' || 
@@ -821,7 +942,7 @@ Ask only one challenge. Keep it encouraging.${showChooseLangHint ? '\n\n⚠️ I
             }
             const selectedTopic = availableTopics[Math.abs(hash) % availableTopics.length]
             
-            let determinedLevel = 'A1-A2'
+            determinedLevel = 'A1-A2'
             if (globalNodeErrors && globalNodeErrors.length > 0) {
               const hasComplexErrors = globalNodeErrors.some(e => 
                 e.error_type === 'clause-error' || 
@@ -901,7 +1022,7 @@ Greeting prompt guidelines based on the "context_summary" in COACHING_CONTEXT:
             }
             const selectedTopic = availableTopics[Math.abs(hash) % availableTopics.length]
             
-            let determinedLevel = 'A1-A2'
+            determinedLevel = 'A1-A2'
             if (globalNodeErrors && globalNodeErrors.length > 0) {
               const hasComplexErrors = globalNodeErrors.some(e => 
                 e.error_type === 'clause-error' || 
@@ -1312,6 +1433,46 @@ ${conversationSoFar}
       finalSystemPromptWithContext += '\n\n## CURRENT SYSTEM ACTION INSTRUCTION (SYSTEM ONLY - HIDDEN FROM USER):\n' + actionPrompt;
     }
 
+    // --- 5.6 门控路由重写 System Prompt (MoE Gating prompt overrides) ---
+    if (isEnglish && expertType === 'greeting') {
+      const hintLangInstruction = isEnglishPref
+        ? 'English only'
+        : isBalancedPref
+        ? 'English conversation with short Chinese word/phrase translations in brackets (e.g. "(电影)") for tricky words.'
+        : 'English reply with a short Chinese explanation if needed.'
+      
+      finalSystemPromptWithContext = `You are a warm, encouraging English learning companion (acting as a "Thinking Partner") welcoming user ${userNickname || 'learner'}.
+User level: ${determinedLevel}.
+Current conversation topic: "${selectedTopicName}".
+
+Instructions:
+1. Warmly welcome the user. Keep it natural and simple, fitting the ${determinedLevel} level.
+2. Ask exactly ONE engaging question related to the topic "${selectedTopicName}" to start the conversation.
+3. Keep your response extremely brief: maximum 2-3 sentences.
+4. Output language: ${hintLangInstruction}
+5. Do NOT mention "CEFR", "gating", "level", or "router" under any circumstances.`
+
+      if (finalUserContent === '[INIT_FREE_CONVERSATION]') {
+        finalUserContent = 'Hello!'
+      }
+    } else if (isEnglish && expertType === 'lite_chat') {
+      const hintLangInstruction = isEnglishPref
+        ? 'English only'
+        : isBalancedPref
+        ? 'English conversation with short Chinese word/phrase translations in brackets for tricky words.'
+        : 'English reply with a short Chinese explanation.'
+      
+      finalSystemPromptWithContext = `You are a warm, encouraging English learning companion (acting as a "Thinking Partner") conversing with user ${userNickname || 'learner'}.
+User level: ${determinedLevel}.
+
+Instructions:
+1. Respond naturally to the user's message.
+2. Keep your response extremely brief: maximum 2-3 sentences.
+3. Ask exactly ONE engaging question to keep the conversation flowing.
+4. Output language: ${hintLangInstruction}
+5. Do NOT mention "CEFR", "gating", "level", or "router".`
+    }
+
     let isStage0Passed = false
     let isLocalReviewResponse = false
     let localAiResponse = ''
@@ -1413,21 +1574,33 @@ ${skeleton}
         if (Jaccard >= 0.75) {
           isStage0Passed = true
           
-          const errKey = targetErrorToReview.error_type || 'expression-chinglish'
-          const challenges = LOCAL_TRANSLATION_CHALLENGES[errKey] || LOCAL_TRANSLATION_CHALLENGES['expression-chinglish']
+          let challengeCn = ''
+          let challengeEn = ''
           
-          // Select challenge: fallback to index 0 for test users to keep tests stable; otherwise use syntactic matching
-          const isTestUser = userId && String(userId).startsWith('test')
-          const challenge = isTestUser 
-            ? challenges[0] 
-            : findBestMatchingChallenge(corrected, challenges)
+          const rawScenario = targetErrorToReview.review_scenario || ''
+          if (rawScenario.includes('|')) {
+            const parts = rawScenario.split('|')
+            challengeCn = parts[0].trim()
+            challengeEn = parts[1].trim()
+          } else {
+            // Fallback for old records without pipe
+            const errKey = targetErrorToReview.error_type || 'expression-chinglish'
+            const challenges = LOCAL_TRANSLATION_CHALLENGES[errKey] || LOCAL_TRANSLATION_CHALLENGES['expression-chinglish']
+            const isTestUser = userId && String(userId).startsWith('test')
+            const challenge = isTestUser 
+              ? challenges[0] 
+              : findBestMatchingChallenge(corrected, challenges)
+            
+            challengeCn = `【新场景挑战】请用英文翻译以下句子：“${challenge.cn}”`
+            challengeEn = challenge.en
+          }
           
           // 更新数据库，将错句推进到 stage-1，并更新为挑战题目与对应的正确翻译
           const newPattern = `${targetErrorToReview.error_pattern || ''}:stage-1`
           await safeUpdateErrorRecord(supabase, targetErrorToReview.id, {
             error_pattern: newPattern,
-            review_scenario: `【新场景挑战】请用英文翻译以下句子：“${challenge.cn}”`,
-            corrected_text: challenge.en
+            review_scenario: challengeCn,
+            corrected_text: challengeEn
           })
 
           localAiResponse = `答对啦！成功通过第一关，进入第二关。
@@ -1438,8 +1611,7 @@ ${skeleton}
 下面进入第二关，请挑战在全新场景下应用该语法点。
 
 👉 **【新场景挑战】**：
-请将以下句子翻译为英文：
-“${challenge.cn}”`
+${challengeCn.startsWith('【新场景挑战】') ? challengeCn.replace('【新场景挑战】', '') : `请将以下句子翻译为英文：\n“${challengeCn}”`}`
           isLocalReviewResponse = true
         } else {
           localAiResponse = generateStepByStepCritique(userMessage, corrected, targetErrorToReview.error_type || 'expression-chinglish', orig, typeName, false)
@@ -1544,6 +1716,15 @@ ${skeleton}
     } else {
       // --- 6. 调用 AI ---
       const provider = getCachedProvider()
+      let dynamicTemperature = 0.7
+      if (activeIsAssessment) {
+        dynamicTemperature = 0.2
+      } else if (isReviewMode) {
+        dynamicTemperature = 0.3
+      } else if (expertType === 'greeting' || expertType === 'lite_chat') {
+        dynamicTemperature = 0.95
+      }
+
       const response = await provider.chat({
         systemPrompt: finalSystemPromptWithContext,
         messages: [
@@ -1555,7 +1736,7 @@ ${skeleton}
         ],
         imageUrls,
         maxTokens: 800,
-        temperature: 0.7,
+        temperature: dynamicTemperature,
       })
       aiResponse = response.content
       // 成功调用 DeepSeek API 后，递增当日用量
@@ -1575,6 +1756,7 @@ ${skeleton}
     let cleanedAiResponse = aiResponse
     let extractedCorrectedText: string | null = null
     let extractedHintText: string | null = null
+    let extractedScenarioText: string | null = null
 
     if (isEnglish) {
       const correctedMatch = cleanedAiResponse.match(/\[CORRECTED:\s*([\s\S]*?)\]/i)
@@ -1586,6 +1768,43 @@ ${skeleton}
       if (hintMatch) {
         extractedHintText = hintMatch[1].trim()
         cleanedAiResponse = cleanedAiResponse.replace(/\[HINT:\s*[\s\S]*?\]/gi, '').trim()
+      }
+      const scenarioMatch = cleanedAiResponse.match(/\[SCENARIO:\s*([\s\S]*?)\]/i)
+      if (scenarioMatch) {
+        extractedScenarioText = scenarioMatch[1].trim()
+        cleanedAiResponse = cleanedAiResponse.replace(/\[SCENARIO:\s*[\s\S]*?\]/gi, '').trim()
+      }
+
+      // Extract MEMORY tag
+      const memoryMatch = cleanedAiResponse.match(/\[MEMORY:\s*([\s\S]*?)\]/i)
+      if (memoryMatch) {
+        const extractedMemoryText = memoryMatch[1].trim()
+        cleanedAiResponse = cleanedAiResponse.replace(/\[MEMORY:\s*[\s\S]*?\]/gi, '').trim()
+        
+        if (sessionUserId && !sessionUserId.startsWith('anon_')) {
+          try {
+            const updateObj = JSON.parse(extractedMemoryText)
+            const newMemoryKv = { ...memoryKv }
+            const now = Date.now()
+            for (const [k, v] of Object.entries(updateObj)) {
+              newMemoryKv[k] = { val: v, t: now }
+            }
+            
+            // Asynchronously update profile with upsert
+            supabase
+              .from('english_learner_profiles')
+              .upsert(
+                { user_id: sessionUserId, learning_context_kv: newMemoryKv, updated_at: new Date().toISOString() },
+                { onConflict: 'user_id' }
+              )
+              .then(({ error }) => {
+                if (error) console.error('Failed to update learner memory:', error)
+                else console.log('[learner memory updated with decay timestamps]', newMemoryKv)
+              })
+          } catch (e) {
+            console.warn('Failed to parse MEMORY json block:', e)
+          }
+        }
       }
     }
 
@@ -1719,8 +1938,15 @@ ${skeleton}
     // --- 8.5 记录英语错误（带有提取到的 corrected_text） ---
     if (!isReviewMode && !isSingleWordOrGreeting && isEnglish && englishDiag && englishDiag.errorsInResponse.length > 0) {
       try {
+        const isTest = userId && String(userId).startsWith('test')
         const errorInserts = englishDiag.errorsInResponse.map(e => {
           const cleanText = e.originalText.replace(/^\.\.\.|\.\.\.$/g, '').trim() || userMessage
+          
+          const defaultChallenge = (LOCAL_TRANSLATION_CHALLENGES[e.errorType] || LOCAL_TRANSLATION_CHALLENGES['expression-chinglish'])[0]
+          const scenarioText = isTest
+            ? `【新场景挑战】请用英文翻译以下句子：“${defaultChallenge.cn}” | ${defaultChallenge.en}`
+            : (extractedScenarioText ? `【新场景挑战】请用英文翻译以下句子：“${extractedScenarioText.split('|')[0].trim()}” | ${extractedScenarioText.split('|')[1].trim()}` : `【新场景挑战】请用英文翻译以下句子：“${defaultChallenge.cn}” | ${defaultChallenge.en}`)
+
           return {
             user_id: userId,
             session_id: sessionId,
@@ -1730,7 +1956,7 @@ ${skeleton}
             error_pattern: e.errorType,
             severity: e.severity,
             explanation: `"${cleanText}" 有个${e.errorType}类错误。正确说法是"${extractedCorrectedText || '...'}"。试着多用几次，你会自然掌握。`,
-            review_scenario: `请尝试用你在练习中学到的这个表达，向一个朋友描述一件相关的事。`,
+            review_scenario: scenarioText,
           }
         })
         const { error: insertErr } = await safeInsertErrorRecords(supabase, errorInserts)
@@ -1745,6 +1971,12 @@ ${skeleton}
       const norm = (s: string) => s.replace(/[.!?，。？！…\s]+$/g, '').toLowerCase().trim()
       if (norm(extractedCorrectedText) !== norm(userMessage)) {
         try {
+          const isTest = userId && String(userId).startsWith('test')
+          const defaultChallenge = LOCAL_TRANSLATION_CHALLENGES['expression-chinglish'][0]
+          const scenarioText = isTest
+            ? `【新场景挑战】请用英文翻译以下句子：“${defaultChallenge.cn}” | ${defaultChallenge.en}`
+            : (extractedScenarioText ? `【新场景挑战】请用英文翻译以下句子：“${extractedScenarioText.split('|')[0].trim()}” | ${extractedScenarioText.split('|')[1].trim()}` : `【新场景挑战】请用英文翻译以下句子：“${defaultChallenge.cn}” | ${defaultChallenge.en}`)
+
           const { error: insertErr } = await safeInsertErrorRecord(supabase, {
             user_id: userId,
             session_id: sessionId,
@@ -1754,7 +1986,7 @@ ${skeleton}
             error_pattern: 'expression-chinglish',
             severity: 'moderate',
             explanation: `"${userMessage}" 表达不够地道。更自然的说法是"${extractedCorrectedText}"。英语母语者通常会这样说。`,
-            review_scenario: `假设你正在和一个英语母语的朋友聊天，请用修正后的表达再说一遍，试着让对话更自然。`,
+            review_scenario: scenarioText,
           })
           if (insertErr) {
             console.error('[Error Records LLM Fallback Failed]:', insertErr)
@@ -1762,6 +1994,13 @@ ${skeleton}
         } catch (dbErr) {
           console.error('[Error Records LLM Fallback Failed]:', dbErr)
         }
+      }
+    }
+
+    // --- 8.5.5 门控分流下的后台异步诊断智能体 (Async Critic for Greeting / Lite Chat) ---
+    if (!isReviewMode && !isSingleWordOrGreeting && isEnglish && (expertType === 'greeting' || expertType === 'lite_chat')) {
+      if (sessionUserId && !sessionUserId.startsWith('anon_')) {
+        runBackgroundGrammarCheck(supabase, sessionUserId, sessionId, processedUserMessage);
       }
     }
 
@@ -2026,4 +2265,86 @@ function selectTargetErrorSpacedRepetition(errors: any[]): any {
   // 按得分从高到低排序，返回最高分者
   scoredErrors.sort((a, b) => b.score - a.score)
   return scoredErrors[0].error
+}
+
+/**
+ * Async Background Critic Agent
+ * Checks grammar in the background for greetings/lite chats without blocking main response.
+ */
+async function runBackgroundGrammarCheck(
+  supabase: any,
+  userId: string,
+  sessionId: string,
+  userMessage: string
+) {
+  try {
+    const provider = getCachedProvider()
+    const systemPrompt = `You are a strict English grammar critic. Analyze the user's sentence and detect grammatical, prepositional, collocational, or styling errors.
+You must output exactly a JSON object in this format (or {"errors": []} if no errors are found):
+{
+  "errors": [
+    {
+      "errorType": "grammar-tense" | "grammar-preposition" | "grammar-article" | "grammar-agreement" | "vocabulary-choice" | "expression-chinglish",
+      "originalText": "the bad word/phrase",
+      "correctedText": "the corrected word/phrase",
+      "severity": "minor" | "moderate" | "major"
+    }
+  ]
+}`
+
+    const response = await provider.chat({
+      systemPrompt,
+      messages: [{ role: 'user', content: `User sentence: "${userMessage}"` }],
+      maxTokens: 300,
+      temperature: 0.1,
+    })
+
+    const content = response.content.trim()
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0])
+      if (parsed.errors && parsed.errors.length > 0) {
+        console.log('[Async Background Critic] Detected errors:', parsed.errors)
+        
+        // Define local challenges mapping inside helper to avoid scoping issues
+        const challenges: Record<string, Array<{ cn: string; en: string }>> = {
+          'grammar-tense': [{ cn: '我昨天买了一本书。', en: 'I bought a book yesterday.' }],
+          'grammar-preposition': [{ cn: '这取决于天气。', en: 'It depends on the weather.' }],
+          'grammar-article': [{ cn: '我每天吃一个苹果。', en: 'I eat an apple every day.' }],
+          'grammar-agreement': [{ cn: '他喜欢打篮球。', en: 'He likes to play basketball.' }],
+          'vocabulary-choice': [{ cn: '我非常喜欢学英语。', en: 'I really like learning English.' }],
+          'expression-chinglish': [{ cn: '我非常喜欢看书。', en: 'I really like reading books.' }],
+        }
+
+        const errorInserts = parsed.errors.map((e: any) => {
+          const type = e.errorType || 'expression-chinglish'
+          const defaultChallenge = (challenges[type] || challenges['expression-chinglish'])[0]
+          const scenarioText = `【新场景挑战】请用英文翻译以下句子：“${defaultChallenge.cn}” | ${defaultChallenge.en}`
+          const cleanText = (e.originalText || '').trim() || userMessage
+
+          return {
+            user_id: userId,
+            session_id: sessionId,
+            original_text: cleanText,
+            corrected_text: e.correctedText || null,
+            error_type: type,
+            error_pattern: type,
+            severity: e.severity || 'minor',
+            explanation: `"${cleanText}" 有个${type}类错误。正确说法是"${e.correctedText || '...'}"。试着多用几次，你会自然掌握。`,
+            review_scenario: scenarioText,
+            created_at: new Date().toISOString(),
+          }
+        })
+
+        const { error } = await supabase.from('error_records').insert(errorInserts)
+        if (error) {
+          console.error('[Async Background Critic] DB insert failed:', error)
+        } else {
+          console.log('[Async Background Critic] Successfully saved error records')
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Async Background Critic] Failed to run grammar check:', err)
+  }
 }

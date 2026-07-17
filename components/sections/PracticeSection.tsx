@@ -276,6 +276,29 @@ function MessageBubble({
 export function PracticeSection() {
   const { messages, addMessage, isThinking, setThinking, session, setSession, summaryData, setSummaryData } = useSessionStore();
   
+  const [langPref, setLangPref] = useState<'chinese' | 'balanced' | 'english'>(() => {
+    if (typeof window === 'undefined') return 'balanced';
+    return (localStorage.getItem('learniny_lang_pref') as 'chinese' | 'balanced' | 'english') || 'balanced';
+  });
+  const [langSwitchToast, setLangSwitchToast] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const LANG_PREF_LABELS: Record<'chinese' | 'balanced' | 'english', { label: string; desc: string }> = {
+    chinese:  { label: '🇨🇳 中文解释', desc: '英文对话，语法提示用中文' },
+    balanced: { label: '⚖️ 双语平衡', desc: '英文对话，提示用中文' },
+    english:  { label: '🇬🇧 纯英沉浸', desc: '全程零中文，AI 只说英文' },
+  };
+
+  const handleLangPrefChange = (pref: 'chinese' | 'balanced' | 'english') => {
+    if (pref === langPref) return;
+    setLangPref(pref);
+    localStorage.setItem('learniny_lang_pref', pref);
+    // Show toast
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setLangSwitchToast(pref);
+    toastTimeoutRef.current = setTimeout(() => setLangSwitchToast(null), 2800);
+  };
+
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [lastSessionId, setLastSessionId] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
@@ -415,6 +438,7 @@ export function PracticeSection() {
               userMessage: '[INIT_FREE_CONVERSATION]',
               module: 'english',
               roundNumber: 1,
+              explanationPreference: langPref,
             }),
           });
           if (!res.ok) throw new Error('Init API request failed');
@@ -483,30 +507,47 @@ export function PracticeSection() {
     });
 
     try {
+      // In pure English immersion mode, skip frontend analysis UI entirely
+      const isImmersionMode = langPref === 'english';
+
       // Run analyze + chat in parallel — analyze returns <1s for instant yellow dot
-      const [analyzeRes, chatRes] = await Promise.all([
-        fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userMessage: userText }),
-        }),
-        fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: activeSessionId,
-            userId: getUserId() || undefined,
-            userMessage: userText,
-            module: 'english',
-            roundNumber: messages.filter(m => m.role === 'user').length + 1,
-          }),
-        }),
-      ]);
+      // (skipped in English immersion mode to keep interface fully immersive)
+      const parallelRequests: [Promise<Response>, Promise<Response>] = isImmersionMode
+        ? [Promise.resolve(new Response(null, { status: 204 })), fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: activeSessionId,
+              userId: getUserId() || undefined,
+              userMessage: userText,
+              module: 'english',
+              roundNumber: messages.filter(m => m.role === 'user').length + 1,
+              explanationPreference: langPref,
+            }),
+          })]
+        : [fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userMessage: userText }),
+          }), fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: activeSessionId,
+              userId: getUserId() || undefined,
+              userMessage: userText,
+              module: 'english',
+              roundNumber: messages.filter(m => m.role === 'user').length + 1,
+              explanationPreference: langPref,
+            }),
+          })];
+
+      const [analyzeRes, chatRes] = await Promise.all(parallelRequests);
 
       if (!chatRes.ok) throw new Error('API request failed');
 
-      // Fast analysis result — show yellow dot immediately
-      if (analyzeRes.ok) {
+      // Fast analysis result — show yellow dot immediately (skipped in immersion mode)
+      if (!isImmersionMode && analyzeRes.ok && analyzeRes.status !== 204) {
         const analyzeData = await analyzeRes.json();
         if (analyzeData.corrected && analyzeData.correctedText) {
           setMsgExtras(prev => ({
@@ -529,7 +570,7 @@ export function PracticeSection() {
       if (data.message) {
         const aiMsgId = data.message.id || `ai_${Date.now()}`;
 
-        if (data.detectedError) {
+        if (!isImmersionMode && data.detectedError) {
           const det = data.detectedError;
           setMsgExtras(prev => ({
             ...prev,
@@ -543,7 +584,7 @@ export function PracticeSection() {
               _hintText: det.hintText || undefined,
             },
           }));
-        } else if (lastUserMsgIdRef.current) {
+        } else if (!isImmersionMode && lastUserMsgIdRef.current) {
           // Ensure correct messages still get their green state
           setMsgExtras(prev => {
             if (prev[lastUserMsgIdRef.current!]) return prev; // analyze already set it
@@ -580,26 +621,31 @@ export function PracticeSection() {
     if (!activeSessionId || isEndingSession) return;
     setIsEndingSession(true);
 
-    // 10 seconds safety timeout to force local reset if backend hangs
-    const safetyTimeout = setTimeout(() => {
-      console.warn('Ending session timed out. Forcing local state reset.');
-      localStorage.removeItem('learniny_last_session_id');
-      setLastSessionId(null);
-      setActiveSessionId(null);
-      setSession(null);
-      setIsEndingSession(false);
-    }, 10000);
+    const sessionIdToProcess = activeSessionId;
+    const nodeToProcess = session?.currentKnowledgeNodeId || 'self-intro';
 
+    // 1. 立即跳转到首页，并开启后台加载 Modal
+    setSummaryData({ isLoading: true });
+    
+    localStorage.removeItem('learniny_last_session_id');
+    setLastSessionId(null);
+    setActiveSessionId(null);
+    useSessionStore.getState().setActiveChatSessionId(null);
+    setSession(null);
+    useSessionStore.getState().setActiveSection('home');
+    setIsEndingSession(false);
+
+    // 2. 在后台异步执行结算 API 调用
     try {
       const userId = getUserId() || undefined;
-      // 1. 调用 POST /api/discoveries 自动抽提学习发现与评估，点亮星图
+      // 2.1 抽提今日发现
       const res = await fetch('/api/discoveries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId: activeSessionId,
+          sessionId: sessionIdToProcess,
           userId,
-          knowledgeNodeId: session?.currentKnowledgeNodeId || 'self-intro',
+          knowledgeNodeId: nodeToProcess,
           module: 'english',
         }),
       });
@@ -609,23 +655,14 @@ export function PracticeSection() {
         discoveryData = await res.json();
       }
 
-      // 2. 调用 PATCH /api/sessions 归档会话
+      // 2.2 归档会话
       await fetch('/api/sessions', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: activeSessionId }),
+        body: JSON.stringify({ sessionId: sessionIdToProcess }),
       });
 
-      clearTimeout(safetyTimeout);
-
-      // 无论成功还是失败，都立即清理本地对话会话状态，并切回首页
-      localStorage.removeItem('learniny_last_session_id');
-      setLastSessionId(null);
-      setActiveSessionId(null);
-      useSessionStore.getState().setActiveChatSessionId(null);
-      setSession(null);
-      useSessionStore.getState().setActiveSection('home');
-
+      // 2.3 填充数据到 Modal
       if (discoveryData && discoveryData.success) {
         setSummaryData(discoveryData.discovery);
       } else if (discoveryData && discoveryData.tooShort) {
@@ -634,17 +671,22 @@ export function PracticeSection() {
           summary: '你刚才的对话较短，系统无法评估出实质性的语法点。建议下次与 AI 多进行几轮英语交流，帮助我们更好地为你总结并点亮星图哦～',
           isNotice: true
         });
+      } else {
+        // Fallback if success is false
+        setSummaryData({
+          title: '对话圆满结束',
+          summary: '本轮对话已顺利保存，星图数据已成功更新！你可以前往个人画像页面查看你的学习足迹。',
+          isNotice: true
+        });
       }
     } catch (err) {
-      console.error('Error during ending session:', err);
-      clearTimeout(safetyTimeout);
-      localStorage.removeItem('learniny_last_session_id');
-      setLastSessionId(null);
-      setActiveSessionId(null);
-      setSession(null);
-      useSessionStore.getState().setActiveSection('home');
-    } finally {
-      setIsEndingSession(false);
+      console.error('Error during async ending session:', err);
+      // Fallback on error
+      setSummaryData({
+        title: '对话已成功结束',
+        summary: '网络请求超时，但你的学习对话数据已安全归档。你可以稍后在个人画像中查看最新的星图点亮进度！',
+        isNotice: true
+      });
     }
   };
 
@@ -686,8 +728,43 @@ export function PracticeSection() {
           /* Normal Chat Interface */
           <>
             {/* Fixed Top Bar — always visible */}
-            <div className="absolute top-0 left-0 right-0 z-20 flex justify-between items-center px-4 md:px-8 py-3 bg-gradient-to-b from-app-bg via-app-bg/95 to-transparent">
-              <span className="text-[10px] text-text-secondary font-mono tracking-widest uppercase">ZPD Session Active</span>
+            <div className="absolute top-0 left-0 right-0 z-20 flex justify-between items-center px-4 md:px-8 py-3.5 bg-gradient-to-b from-app-bg via-app-bg/95 to-transparent">
+              <span className="text-[10px] text-text-secondary font-mono tracking-widest uppercase hidden sm:inline">ZPD Session Active</span>
+              
+              {/* Language Preference Switcher */}
+              <div className="flex bg-[#0e0e0e]/80 backdrop-blur-xl border border-white/10 rounded-full p-1 text-[11px] font-medium text-text-secondary shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)]">
+                <button
+                  onClick={() => handleLangPrefChange('chinese')}
+                  className={`px-3 py-1 rounded-full transition-all duration-300 cursor-pointer ${
+                    langPref === 'chinese'
+                      ? 'bg-brand-accent text-[#000000] font-bold shadow-[0_0_12px_rgba(0,255,157,0.4)] scale-105'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-white/5'
+                  }`}
+                >
+                  🇨🇳 中文
+                </button>
+                <button
+                  onClick={() => handleLangPrefChange('balanced')}
+                  className={`px-3 py-1 rounded-full transition-all duration-300 cursor-pointer ${
+                    langPref === 'balanced'
+                      ? 'bg-brand-accent text-[#000000] font-bold shadow-[0_0_12px_rgba(0,255,157,0.4)] scale-105'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-white/5'
+                  }`}
+                >
+                  ⚖️ 双语
+                </button>
+                <button
+                  onClick={() => handleLangPrefChange('english')}
+                  className={`px-3 py-1 rounded-full transition-all duration-300 cursor-pointer ${
+                    langPref === 'english'
+                      ? 'bg-brand-accent text-[#000000] font-bold shadow-[0_0_12px_rgba(0,255,157,0.4)] scale-105'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-white/5'
+                  }`}
+                >
+                  🇬🇧 纯英
+                </button>
+              </div>
+
               <button
                 onClick={() => setShowEndConfirm(true)}
                 disabled={isEndingSession}
@@ -698,7 +775,7 @@ export function PracticeSection() {
             </div>
 
             {/* Chat Area */}
-            <div ref={containerRef} className="flex-1 overflow-y-auto px-4 md:px-8 space-y-6 flex flex-col pb-24 pt-12 scrollbar-none">
+            <div ref={containerRef} className="flex-1 overflow-y-auto px-4 md:px-8 space-y-6 flex flex-col pb-24 pt-20 scrollbar-none">
 
               {messages.length === 0 && !isThinking && (
                 <div className="flex flex-col items-center justify-center h-full text-center py-20">
@@ -736,6 +813,36 @@ export function PracticeSection() {
             {/* Input Area */}
             <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 bg-gradient-to-t from-app-bg via-app-bg to-transparent">
               <div className="max-w-2xl mx-auto">
+
+                {/* Mode indicator + toast */}
+                <div className="mb-2 flex items-center justify-between px-1">
+                  <AnimatePresence mode="wait">
+                    {langSwitchToast ? (
+                      <motion.span
+                        key={langSwitchToast}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.25 }}
+                        className="text-[11px] font-bold text-brand-accent tracking-wide"
+                      >
+                        ✓ 已切换至{LANG_PREF_LABELS[langSwitchToast as 'chinese' | 'balanced' | 'english'].label} — 下条消息起生效
+                      </motion.span>
+                    ) : (
+                      <motion.span
+                        key={`static-${langPref}`}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="text-[11px] text-text-secondary/60 tracking-wide"
+                      >
+                        {LANG_PREF_LABELS[langPref].label} · {LANG_PREF_LABELS[langPref].desc}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </div>
+
                 <textarea
                   value={input}
                   onChange={e => {
