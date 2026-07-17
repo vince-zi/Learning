@@ -332,11 +332,10 @@ export function PracticeSection() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [asrError, setAsrError] = useState<string | null>(null);
 
-  // 语音录音 (ASR) 状态
+  // 语音录音 (ASR) 状态 (使用浏览器原生 Web Speech API)
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const recognitionRef = useRef<any>(null);
 
   // 卸载组件时停止播放 & 页面加载时预热加载浏览器原生音色库 (修复 Chrome/Safari 获取声音列表为空的问题)
   useEffect(() => {
@@ -424,80 +423,27 @@ export function PracticeSection() {
     window.speechSynthesis.speak(utterance);
   };
 
-  const handleMicClick = async () => {
-    if (isRecording) {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
-      return;
-    }
+  // 初始化浏览器原生语音识别引擎 (支持 Chrome/Safari/Edge 等主流移动和 PC 浏览器)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognitionClass) {
+        const recog = new SpeechRecognitionClass();
+        recog.continuous = false; // 短句模式，说完即停
+        recog.interimResults = false; // 仅返回最终识别的文本
+        recog.lang = 'en-US'; // 设为英语识别
 
-    setAsrError(null);
+        recog.onstart = () => {
+          setIsRecording(true);
+          setAsrError(null);
+        };
 
-    try {
-      // 检查当前网页协议：非 localhost 且为 http 协议时，浏览器会直接禁用录音 API
-      if (typeof window !== 'undefined' && window.location.protocol === 'http:' && window.location.hostname !== 'localhost') {
-        throw new Error('insecure_origin');
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioChunksRef.current = [];
-
-      // 动态选择浏览器支持的 MimeType (防止 Safari/iOS 上因不支持 webm 而直接崩溃)
-      let options: MediaRecorderOptions = {};
-      if (typeof MediaRecorder.isTypeSupported === 'function') {
-        if (MediaRecorder.isTypeSupported('audio/webm')) {
-          options = { mimeType: 'audio/webm' };
-        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-          options = { mimeType: 'audio/mp4' };
-        } else if (MediaRecorder.isTypeSupported('audio/wav')) {
-          options = { mimeType: 'audio/wav' };
-        }
-      }
-
-      const recorder = new MediaRecorder(stream, options);
-      mediaRecorderRef.current = recorder;
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      recorder.onstop = async () => {
-        stream.getTracks().forEach(track => track.stop());
-
-        if (audioChunksRef.current.length === 0) {
-          setAsrError('未录制到有效音频数据');
-          return;
-        }
-
-        const actualType = recorder.mimeType || 'audio/webm';
-        const fileExtension = actualType.includes('mp4') ? 'mp4' : actualType.includes('wav') ? 'wav' : 'webm';
-        const audioBlob = new Blob(audioChunksRef.current, { type: actualType });
-
-        setIsRecording(false);
-        setIsTranscribing(true);
-
-        try {
-          const formData = new FormData();
-          formData.append('file', audioBlob, `voice.${fileExtension}`);
-
-          const response = await fetch('/api/transcribe', {
-            method: 'POST',
-            body: formData,
-          });
-
-          if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error || '转写服务请求失败');
-          }
-
-          const data = await response.json();
-          if (data && data.text && data.text.trim()) {
+        recog.onresult = (event: any) => {
+          const resultText = event.results[0][0].transcript;
+          if (resultText && resultText.trim()) {
             setInput(prev => {
               const base = prev.trim();
-              return base ? `${base} ${data.text.trim()}` : data.text.trim();
+              return base ? `${base} ${resultText.trim()}` : resultText.trim();
             });
             setTimeout(() => {
               const el = document.getElementById('chat-textarea') as HTMLTextAreaElement;
@@ -508,27 +454,54 @@ export function PracticeSection() {
               }
             }, 50);
           } else {
-            setAsrError('未检测到您说话的内容，请离麦克风近一些重试');
+            setAsrError('未检测到您说话的内容，请再试一次');
           }
-        } catch (err: any) {
-          console.error('[ASR Error]', err);
-          setAsrError(err.message || '语音识别失败，请检查麦克风或 API 连接');
-        } finally {
-          setIsTranscribing(false);
-        }
-      };
+        };
 
-      recorder.start();
-      setIsRecording(true);
-    } catch (err: any) {
-      console.error('[Microphone Access Error]', err);
+        recog.onerror = (event: any) => {
+          console.error('[SpeechRecognition Error]', event);
+          setIsRecording(false);
+          if (event.error === 'not-allowed') {
+            setAsrError('麦克风访问被拒绝。请在浏览器地址栏左侧允许该网站使用麦克风。');
+          } else if (event.error === 'no-speech') {
+            setAsrError('未听到声音，请大声说话并重试。');
+          } else if (event.error === 'audio-capture') {
+            setAsrError('未检测到录音硬件设备，请检查麦克风连接。');
+          } else {
+            setAsrError(`语音识别发生错误: ${event.error}`);
+          }
+        };
+
+        recog.onend = () => {
+          setIsRecording(false);
+        };
+
+        recognitionRef.current = recog;
+      }
+    }
+  }, []);
+
+  const handleMicClick = () => {
+    if (!recognitionRef.current) {
+      setAsrError('您的浏览器不支持原生语音识别，建议使用 Chrome、Safari 或 Edge 浏览器。');
+      return;
+    }
+
+    if (isRecording) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
       setIsRecording(false);
-      if (err.message === 'insecure_origin') {
-        setAsrError('安全限制：非 localhost 的 HTTP 协议下，移动端浏览器禁用了麦克风。请使用 HTTPS 部署，或在本机电脑 localhost 测试。');
-      } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setAsrError('麦克风访问请求被拒绝。请在浏览器设置中允许该网站使用麦克风。');
-      } else {
-        setAsrError(`无法开启麦克风录音: ${err.message || err.name}`);
+    } else {
+      setAsrError(null);
+      try {
+        recognitionRef.current.start();
+      } catch (err: any) {
+        console.error('[Start Recognition Error]', err);
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+        setIsRecording(false);
       }
     }
   };
