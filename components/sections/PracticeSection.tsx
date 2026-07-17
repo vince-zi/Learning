@@ -331,6 +331,30 @@ export function PracticeSection() {
   const [playingLoadingId, setPlayingLoadingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // 语音播放设置状态
+  const [ttsGender, setTtsGender] = useState<'female' | 'male'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('learniny_tts_gender') as 'female' | 'male') || 'female';
+    }
+    return 'female';
+  });
+  const [ttsSpeed, setTtsSpeed] = useState<'slow' | 'normal' | 'fast'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('learniny_tts_speed') as 'slow' | 'normal' | 'fast') || 'normal';
+    }
+    return 'normal';
+  });
+  const [showTtsSettings, setShowTtsSettings] = useState(false);
+  const [asrError, setAsrError] = useState<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('learniny_tts_gender', ttsGender);
+  }, [ttsGender]);
+
+  useEffect(() => {
+    localStorage.setItem('learniny_tts_speed', ttsSpeed);
+  }, [ttsSpeed]);
+
   // 语音录音 (ASR) 状态
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -385,16 +409,46 @@ export function PracticeSection() {
     const utterance = new SpeechSynthesisUtterance(cleanedText);
     utterance.lang = 'en-US'; // 设为美式英语
 
-    // 尝试寻找高质量的英文发音人
+    // 语速设置
+    let rateValue = 1.0;
+    if (ttsSpeed === 'slow') rateValue = 0.75;
+    if (ttsSpeed === 'fast') rateValue = 1.25;
+    utterance.rate = rateValue;
+
+    // 尝试寻找匹配性别的英文发音人
     const voices = window.speechSynthesis.getVoices();
-    const englishVoice = voices.find(v => v.lang.startsWith('en') && (
-      v.name.includes('Google') || 
-      v.name.includes('Natural') || 
-      v.name.includes('Microsoft') || 
-      v.name.includes('Samantha')
-    ));
-    if (englishVoice) {
-      utterance.voice = englishVoice;
+    const englishVoices = voices.filter(v => v.lang.startsWith('en'));
+    
+    let selectedVoice = null;
+    if (ttsGender === 'male') {
+      // 寻找英文男声
+      selectedVoice = englishVoices.find(v => 
+        v.name.toLowerCase().includes('male') || 
+        v.name.toLowerCase().includes('david') || 
+        v.name.toLowerCase().includes('mark') || 
+        v.name.toLowerCase().includes('daniel') ||
+        v.name.toLowerCase().includes('george') ||
+        v.name.toLowerCase().includes('ravi')
+      );
+    } else {
+      // 寻找英文女声
+      selectedVoice = englishVoices.find(v => 
+        v.name.toLowerCase().includes('female') || 
+        v.name.toLowerCase().includes('zira') || 
+        v.name.toLowerCase().includes('samantha') || 
+        v.name.toLowerCase().includes('karen') ||
+        v.name.toLowerCase().includes('google us english') ||
+        v.name.toLowerCase().includes('hazel')
+      );
+    }
+
+    // 兜底：如果找不到对应的性别，使用第一个英文发音人
+    if (!selectedVoice) {
+      selectedVoice = englishVoices[0];
+    }
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
     }
 
     utterance.onstart = () => {
@@ -423,10 +477,30 @@ export function PracticeSection() {
       return;
     }
 
+    setAsrError(null);
+
     try {
+      // 检查当前网页协议：非 localhost 且为 http 协议时，浏览器会直接禁用录音 API
+      if (typeof window !== 'undefined' && window.location.protocol === 'http:' && window.location.hostname !== 'localhost') {
+        throw new Error('insecure_origin');
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunksRef.current = [];
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+
+      // 动态选择浏览器支持的 MimeType (防止 Safari/iOS 上因不支持 webm 而直接崩溃)
+      let options: MediaRecorderOptions = {};
+      if (typeof MediaRecorder.isTypeSupported === 'function') {
+        if (MediaRecorder.isTypeSupported('audio/webm')) {
+          options = { mimeType: 'audio/webm' };
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          options = { mimeType: 'audio/mp4' };
+        } else if (MediaRecorder.isTypeSupported('audio/wav')) {
+          options = { mimeType: 'audio/wav' };
+        }
+      }
+
+      const recorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (event) => {
@@ -438,39 +512,52 @@ export function PracticeSection() {
       recorder.onstop = async () => {
         stream.getTracks().forEach(track => track.stop());
 
-        if (audioChunksRef.current.length === 0) return;
+        if (audioChunksRef.current.length === 0) {
+          setAsrError('未录制到有效音频数据');
+          return;
+        }
 
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const actualType = recorder.mimeType || 'audio/webm';
+        const fileExtension = actualType.includes('mp4') ? 'mp4' : actualType.includes('wav') ? 'wav' : 'webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type: actualType });
+
         setIsRecording(false);
         setIsTranscribing(true);
 
         try {
           const formData = new FormData();
-          formData.append('file', audioBlob, 'voice.webm');
+          formData.append('file', audioBlob, `voice.${fileExtension}`);
 
           const response = await fetch('/api/transcribe', {
             method: 'POST',
             body: formData,
           });
 
-          if (!response.ok) throw new Error('Transcription failed');
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || '转写服务请求失败');
+          }
 
           const data = await response.json();
-          if (data.text) {
+          if (data && data.text && data.text.trim()) {
             setInput(prev => {
               const base = prev.trim();
-              return base ? `${base} ${data.text}` : data.text;
+              return base ? `${base} ${data.text.trim()}` : data.text.trim();
             });
             setTimeout(() => {
               const el = document.getElementById('chat-textarea') as HTMLTextAreaElement;
               if (el) {
+                el.focus();
                 el.style.height = 'auto';
-                el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+                el.style.height = `${el.scrollHeight}px`;
               }
             }, 50);
+          } else {
+            setAsrError('未检测到您说话的内容，请离麦克风近一些重试');
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error('[ASR Error]', err);
+          setAsrError(err.message || '语音识别失败，请检查麦克风或 API 连接');
         } finally {
           setIsTranscribing(false);
         }
@@ -478,9 +565,16 @@ export function PracticeSection() {
 
       recorder.start();
       setIsRecording(true);
-    } catch (err) {
-      console.error('Failed to start recording:', err);
+    } catch (err: any) {
+      console.error('[Microphone Access Error]', err);
       setIsRecording(false);
+      if (err.message === 'insecure_origin') {
+        setAsrError('安全限制：非 localhost 的 HTTP 协议下，移动端浏览器禁用了麦克风。请使用 HTTPS 部署，或在本机电脑 localhost 测试。');
+      } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setAsrError('麦克风访问请求被拒绝。请在浏览器设置中允许该网站使用麦克风。');
+      } else {
+        setAsrError(`无法开启麦克风录音: ${err.message || err.name}`);
+      }
     }
   };
 
@@ -945,13 +1039,111 @@ export function PracticeSection() {
                 </button>
               </div>
 
-              <button
-                onClick={() => setShowEndConfirm(true)}
-                disabled={isEndingSession}
-                className="px-3.5 py-1.5 bg-brand-error/5 hover:bg-brand-error/15 border border-brand-error/25 hover:border-brand-error/50 rounded-full text-[10px] font-bold text-brand-error tracking-wider uppercase transition-all duration-300 disabled:opacity-50 cursor-pointer shadow-[0_0_12px_rgba(255,75,75,0.05)] animate-pulse"
-              >
-                {isEndingSession ? '结算中...' : '结束对话'}
-              </button>
+              <div className="flex items-center gap-2">
+                {/* TTS Quick Settings Button */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowTtsSettings(!showTtsSettings)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold tracking-wider uppercase transition-all duration-300 cursor-pointer border ${
+                      showTtsSettings 
+                        ? 'bg-brand-accent text-black border-brand-accent shadow-[0_0_12px_rgba(0,255,157,0.4)]'
+                        : 'bg-[#0e0e0e]/80 border-white/10 text-text-secondary hover:text-text-primary hover:bg-white/5'
+                    }`}
+                  >
+                    <span>🎧</span>
+                    <span className="hidden xs:inline">语音设置</span>
+                  </button>
+
+                  <AnimatePresence>
+                    {showTtsSettings && (
+                      <>
+                        {/* Click outside backdrop */}
+                        <div className="fixed inset-0 z-30" onClick={() => setShowTtsSettings(false)} />
+                        
+                        {/* Floating Settings Card */}
+                        <motion.div
+                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                          className="absolute right-0 mt-2 w-48 bg-[#0F0F0F] border border-white/10 rounded-2xl p-4 shadow-xl z-40 space-y-4 text-left pointer-events-auto"
+                        >
+                          {/* Gender */}
+                          <div className="space-y-1.5">
+                            <span className="text-[10px] font-mono tracking-wider text-text-secondary/60 uppercase block">发音人 / Voice</span>
+                            <div className="grid grid-cols-2 gap-1 bg-black/40 p-0.5 rounded-lg border border-white/5">
+                              <button
+                                onClick={() => setTtsGender('female')}
+                                className={`py-1 text-[11px] rounded-md transition-colors cursor-pointer ${
+                                  ttsGender === 'female'
+                                    ? 'bg-brand-accent text-[#000000] font-semibold'
+                                    : 'text-text-secondary hover:text-text-primary'
+                                }`}
+                              >
+                                👩 女声
+                              </button>
+                              <button
+                                onClick={() => setTtsGender('male')}
+                                className={`py-1 text-[11px] rounded-md transition-colors cursor-pointer ${
+                                  ttsGender === 'male'
+                                    ? 'bg-brand-accent text-[#000000] font-semibold'
+                                    : 'text-text-secondary hover:text-text-primary'
+                                }`}
+                              >
+                                👨 男声
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Speed */}
+                          <div className="space-y-1.5">
+                            <span className="text-[10px] font-mono tracking-wider text-text-secondary/60 uppercase block">朗读语速 / Speed</span>
+                            <div className="grid grid-cols-3 gap-0.5 bg-black/40 p-0.5 rounded-lg border border-white/5 text-[10px] text-center">
+                              <button
+                                onClick={() => setTtsSpeed('slow')}
+                                className={`py-1 rounded-md transition-colors cursor-pointer ${
+                                  ttsSpeed === 'slow'
+                                    ? 'bg-brand-accent text-[#000000] font-semibold'
+                                    : 'text-text-secondary hover:text-text-primary'
+                                }`}
+                              >
+                                🐢 慢
+                              </button>
+                              <button
+                                onClick={() => setTtsSpeed('normal')}
+                                className={`py-1 rounded-md transition-colors cursor-pointer ${
+                                  ttsSpeed === 'normal'
+                                    ? 'bg-brand-accent text-[#000000] font-semibold'
+                                    : 'text-text-secondary hover:text-text-primary'
+                                }`}
+                              >
+                                正常
+                              </button>
+                              <button
+                                onClick={() => setTtsSpeed('fast')}
+                                className={`py-1 rounded-md transition-colors cursor-pointer ${
+                                  ttsSpeed === 'fast'
+                                    ? 'bg-brand-accent text-[#000000] font-semibold'
+                                    : 'text-text-secondary hover:text-text-primary'
+                                }`}
+                              >
+                                🏃 快
+                              </button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                <button
+                  onClick={() => setShowEndConfirm(true)}
+                  disabled={isEndingSession}
+                  className="px-3.5 py-1.5 bg-brand-error/5 hover:bg-brand-error/15 border border-brand-error/25 hover:border-brand-error/50 rounded-full text-[10px] font-bold text-brand-error tracking-wider uppercase transition-all duration-300 disabled:opacity-55 cursor-pointer shadow-[0_0_12px_rgba(255,75,75,0.05)] animate-pulse"
+                >
+                  {isEndingSession ? '结算中...' : '结束对话'}
+                </button>
+              </div>
             </div>
 
             {/* Chat Area */}
@@ -997,33 +1189,51 @@ export function PracticeSection() {
             <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 bg-gradient-to-t from-app-bg via-app-bg to-transparent">
               <div className="max-w-2xl mx-auto">
 
-                {/* Mode indicator + toast */}
-                <div className="mb-2 flex items-center justify-between px-1">
-                  <AnimatePresence mode="wait">
-                    {langSwitchToast ? (
-                      <motion.span
-                        key={langSwitchToast}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.25 }}
-                        className="text-[11px] font-bold text-brand-accent tracking-wide"
+                {/* Mode indicator + toast / asrError */}
+                <div className="mb-2 flex flex-col gap-1.5 px-1">
+                  {asrError && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="text-[11px] font-medium text-brand-error flex items-start gap-1.5 bg-brand-error/10 border border-brand-error/20 px-3.5 py-2.5 rounded-xl mb-1 text-left pointer-events-auto"
+                    >
+                      <span className="leading-relaxed">⚠️ {asrError}</span>
+                      <button 
+                        onClick={() => setAsrError(null)}
+                        className="ml-auto hover:text-white font-mono font-bold cursor-pointer text-text-secondary/70 text-[10px]"
                       >
-                        ✓ 已切换至{LANG_PREF_LABELS[langSwitchToast as 'chinese' | 'balanced' | 'english'].label} — 下条消息起生效
-                      </motion.span>
-                    ) : (
-                      <motion.span
-                        key={`static-${langPref}`}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="text-[11px] text-text-secondary/60 tracking-wide"
-                      >
-                        {LANG_PREF_LABELS[langPref].label} · {LANG_PREF_LABELS[langPref].desc}
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
+                        [✕]
+                      </button>
+                    </motion.div>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    <AnimatePresence mode="wait">
+                      {langSwitchToast ? (
+                        <motion.span
+                          key={langSwitchToast}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={{ duration: 0.25 }}
+                          className="text-[11px] font-bold text-brand-accent tracking-wide"
+                        >
+                          ✓ 已切换至{LANG_PREF_LABELS[langSwitchToast as 'chinese' | 'balanced' | 'english'].label} — 下条消息起生效
+                        </motion.span>
+                      ) : (
+                        <motion.span
+                          key={`static-${langPref}`}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="text-[11px] text-text-secondary/60 tracking-wide"
+                        >
+                          {LANG_PREF_LABELS[langPref].label} · {LANG_PREF_LABELS[langPref].desc}
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
 
                 <div className="relative flex items-center">
