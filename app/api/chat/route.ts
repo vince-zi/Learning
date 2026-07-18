@@ -314,7 +314,7 @@ export async function POST(request: Request) {
           const targetId = specificIdMatch[1]
           const { data: errRecord } = await supabase
             .from('error_records')
-            .select('id, original_text, corrected_text, error_type, error_pattern, severity, created_at')
+            .select('id, original_text, corrected_text, error_type, error_pattern, severity, created_at, review_scenario')
             .eq('id', targetId)
             .single()
           
@@ -326,7 +326,7 @@ export async function POST(request: Request) {
           // 全局温习: 获取所有活跃错题以进行选题
           const { data: activeErrors } = await supabase
             .from('error_records')
-            .select('id, original_text, corrected_text, error_type, error_pattern, severity, created_at')
+            .select('id, original_text, corrected_text, error_type, error_pattern, severity, created_at, review_scenario')
             .eq('user_id', userId)
             .eq('noted_by_user', false)
           
