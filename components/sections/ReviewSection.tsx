@@ -7,10 +7,9 @@ import { useSessionStore } from '@/store/session-store';
 import { getUserId } from '@/lib/user-id';
 
 const tokens = {
-  surfaceAI: "#0A0A0A",
   surfaceCard: "#0D0D0D",
   textPrimary: "#FFFFFF",
-  textSecondary: "#888888",
+  textSecondary: "#AAAAAA",
   gold: "#00FF9D",
   goldSoft: "#00FF9D22",
   teal: "#00E5FF",
@@ -37,6 +36,14 @@ function getClueForErrorType(type: string, original: string): string {
     '中式英语': '试着用英文的语序和习惯来表达，而不是中文直译。',
   };
   return genericHints[type] || `"${original.slice(0, 20)}..." 这里可以改得更自然一些。`;
+}
+
+// 从 review_scenario 中提取中文场景部分（格式："中文场景 | English answer"）
+function getScenarioDisplayText(scenario: string | null): string | null {
+  if (!scenario) return null;
+  const pipeIndex = scenario.lastIndexOf('|');
+  if (pipeIndex === -1) return scenario;
+  return scenario.slice(0, pipeIndex).trim();
 }
 
 function renderFormattedText(text: string): React.ReactNode {
@@ -327,7 +334,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
   return (
     <div
       style={{
-        position: "absolute",
+        position: "fixed",
         inset: 0,
         background: "#00000070",
         display: "flex",
@@ -388,7 +395,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
                 <div
                   style={{
                     fontFamily: "'JetBrains Mono', monospace",
-                    fontSize: 9,
+                    fontSize: 11,
                     color: stage === idx ? tokens.textPrimary : tokens.textSecondary,
                     textAlign: "center",
                     width: 74,
@@ -438,7 +445,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
                     {record.original}
                   </div>
                 ) : (
-                  renderAiTaskWithColors(record.reviewScenario || aiTask || "加载新场景中...")
+                  renderAiTaskWithColors(getScenarioDisplayText(record.reviewScenario) || aiTask || "加载新场景中...")
                 )}
               </div>
 
@@ -582,6 +589,24 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
               >
                 {isLoading && <Loader2 size={16} className="animate-spin" />}
                 {stage === 0 ? "完成润色，前往场景挑战" : "融会贯通，点亮此表达"}
+              </button>
+              <button
+                onClick={onClose}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  borderRadius: 10,
+                  border: `1px solid ${tokens.divider}`,
+                  background: "transparent",
+                  color: tokens.textSecondary,
+                  fontFamily: "Inter, sans-serif",
+                  fontWeight: 500,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  marginTop: 8,
+                }}
+              >
+                返回
               </button>
             </div>
           </>
@@ -738,7 +763,7 @@ function ErrorCard({ record, onReview }: { record: any, onReview: () => void }) 
                 <div>
                   <div style={{ fontSize: 11, color: tokens.textSecondary, marginBottom: 2 }}>第二关情景挑战：</div>
                   <div style={{ fontSize: 13, color: tokens.teal, lineHeight: 1.4 }}>
-                    {record.reviewScenario}
+                    {getScenarioDisplayText(record.reviewScenario)}
                   </div>
                 </div>
               )}
@@ -782,10 +807,12 @@ function ErrorCard({ record, onReview }: { record: any, onReview: () => void }) 
 }
 
 export function ReviewSection() {
-  const { activeSection } = useSessionStore();
+  const { activeSection, setActiveSection } = useSessionStore();
   const [tab, setTab] = useState("all");
   const [reviewing, setReviewing] = useState<any>(null);
   const [records, setRecords] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
 
   const handleStartFocusTraining = (categoryName: string) => {
     const match = records.find(r => r.category === categoryName && r.stage < 2);
@@ -795,8 +822,12 @@ export function ReviewSection() {
   };
 
   const fetchRecords = async () => {
+    setIsLoading(true);
+    setFetchError(false);
+    try {
     const userId = getUserId();
-    const { data } = await supabase.from('error_records').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+    const { data, error: fetchErr } = await supabase.from('error_records').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+    if (fetchErr) throw fetchErr;
     if (data) {
       // batch-fetch sessions to get context (topic names / theme)
       const sessionIds = [...new Set(data.map(d => d.session_id).filter(Boolean))] as string[];
@@ -880,6 +911,12 @@ export function ReviewSection() {
       
       setRecords(sorted);
     }
+    } catch (err) {
+      console.error('fetchRecords error:', err);
+      setFetchError(true);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -889,7 +926,7 @@ export function ReviewSection() {
   }, [activeSection]);
 
   const pendingCount = records.filter((r) => r.stage < 2).length;
-  const clearedThisWeek = records.filter((r) => r.stage === 2).length;
+  const masteredCount = records.filter((r) => r.stage === 2).length;
 
   const focusGroups = buildFocusGroups(records);
 
@@ -898,15 +935,17 @@ export function ReviewSection() {
       <style>{fontImport}</style>
       <style>{`
         @keyframes slideUp { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         * { box-sizing: border-box; }
+        textarea::placeholder { color: #666; opacity: 1; }
       `}</style>
       
       <div className="max-w-2xl mx-auto w-full h-full flex flex-col relative overflow-hidden">
         {/* header */}
         <div style={{ padding: "0 0 10px" }}>
-          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 24, color: tokens.textPrimary, marginBottom: 18 }}>
+          <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 24, color: tokens.textPrimary, marginBottom: 18, fontWeight: 500 }}>
             学习进度
-          </div>
+          </h1>
 
           {/* stats row */}
           <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
@@ -922,9 +961,32 @@ export function ReviewSection() {
                 <Flame size={14} color={tokens.gold} />
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: tokens.textSecondary }}>已掌握</span>
               </div>
-              <div style={{ fontSize: 24, fontFamily: "'Fraunces', serif", color: tokens.textPrimary }}>{clearedThisWeek}</div>
+              <div style={{ fontSize: 24, fontFamily: "'Fraunces', serif", color: tokens.textPrimary }}>{masteredCount}</div>
             </div>
           </div>
+
+          {/* progress bar */}
+          {records.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 11, color: tokens.textSecondary, fontFamily: "'JetBrains Mono', monospace" }}>
+                  掌握进度 · {masteredCount}/{records.length}
+                </span>
+                <span style={{ fontSize: 11, color: tokens.gold, fontFamily: "'JetBrains Mono', monospace" }}>
+                  {records.length > 0 ? Math.round((masteredCount / records.length) * 100) : 0}%
+                </span>
+              </div>
+              <div style={{ width: "100%", height: 4, background: tokens.divider, borderRadius: 2, overflow: "hidden" }}>
+                <div style={{
+                  width: `${records.length > 0 ? (masteredCount / records.length) * 100 : 0}%`,
+                  height: "100%",
+                  background: tokens.gold,
+                  borderRadius: 2,
+                  transition: "width 0.5s ease",
+                }} />
+              </div>
+            </div>
+          )}
 
           {/* tabs */}
           <div style={{ display: "flex", gap: 4, background: tokens.surfaceCard, border: `1px solid ${tokens.divider}`, borderRadius: 10, padding: 4, marginBottom: 16 }}>
@@ -956,14 +1018,69 @@ export function ReviewSection() {
 
         {/* content */}
         <div className="flex-1 overflow-y-auto pr-2 pb-8 scrollbar-none">
-          {tab === "all" ? (
+          {isLoading ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[1, 2, 3].map((i) => (
+                <div key={i} style={{
+                  background: tokens.surfaceCard,
+                  borderRadius: 12,
+                  padding: "14px 16px",
+                  border: `1px solid ${tokens.divider}`,
+                  animation: "pulse 1.5s ease-in-out infinite",
+                }}>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                    <div style={{ width: 48, height: 16, background: "#ffffff10", borderRadius: 4 }} />
+                    <div style={{ width: 24, height: 16, background: "#ffffff10", borderRadius: 4 }} />
+                  </div>
+                  <div style={{ width: "70%", height: 14, background: "#ffffff08", borderRadius: 4, marginBottom: 6 }} />
+                  <div style={{ width: "50%", height: 12, background: "#ffffff08", borderRadius: 4 }} />
+                </div>
+              ))}
+            </div>
+          ) : fetchError ? (
+            <div style={{ textAlign: 'center', color: tokens.textSecondary, marginTop: 40, fontSize: 14 }}>
+              <div style={{ marginBottom: 16 }}>加载失败，请检查网络后重试</div>
+              <button
+                onClick={fetchRecords}
+                style={{
+                  padding: "10px 24px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: tokens.gold,
+                  color: "#181410",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  fontFamily: "Inter, sans-serif",
+                  cursor: "pointer",
+                }}
+              >
+                重新加载
+              </button>
+            </div>
+          ) : tab === "all" ? (
             records.length > 0 ? (
               records.map((r) => (
                 <ErrorCard key={r.id} record={r} onReview={() => setReviewing(r)} />
               ))
             ) : (
               <div style={{ textAlign: 'center', color: tokens.textSecondary, marginTop: 40, fontSize: 14 }}>
-                暂无积累的表达。多开启几次对话练习吧！
+                <div style={{ marginBottom: 16 }}>暂无积累的表达，多开启几次对话练习吧！</div>
+                <button
+                  onClick={() => setActiveSection('practice')}
+                  style={{
+                    padding: "10px 24px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    background: "transparent",
+                    color: tokens.textPrimary,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    fontFamily: "Inter, sans-serif",
+                    cursor: "pointer",
+                  }}
+                >
+                  去练习
+                </button>
               </div>
             )
           ) : (
@@ -1023,13 +1140,29 @@ export function ReviewSection() {
               ))
             ) : (
               <div style={{ textAlign: 'center', color: tokens.textSecondary, marginTop: 40, fontSize: 14 }}>
-                暂无专项特训内容。
+                <div style={{ marginBottom: 16 }}>暂无专项特训内容。</div>
+                <button
+                  onClick={() => setActiveSection('practice')}
+                  style={{
+                    padding: "10px 24px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    background: "transparent",
+                    color: tokens.textPrimary,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    fontFamily: "Inter, sans-serif",
+                    cursor: "pointer",
+                  }}
+                >
+                  去练习
+                </button>
               </div>
             )
           )}
         </div>
 
-        {reviewing && <ReviewModal record={reviewing} userId={getUserId() || ''} onClose={() => setReviewing(null)} onComplete={fetchRecords} />}
+        {reviewing && <ReviewModal key={reviewing.id} record={reviewing} userId={getUserId() || ''} onClose={() => setReviewing(null)} onComplete={fetchRecords} />}
       </div>
     </div>
   );

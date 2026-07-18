@@ -288,70 +288,19 @@ export function generateStepByStepCritique(
   userAttempt: string,
   correctSentence: string,
   errorType: string,
-  targetText: string,
-  typeName: string,
-  isTranslationChallenge: boolean = false
+  _targetText: string,
+  _typeName: string,
+  _isTranslationChallenge: boolean = false
 ): string {
-  const clean = (s: string) => s.toLowerCase().replace(/'/g, '').replace(/[^a-z0-9\s]/g, ' ').trim().split(/\s+/).filter(Boolean)
-  const attemptWords = clean(userAttempt)
-  const correctWords = clean(correctSentence)
-
-  const attemptSet = new Set(attemptWords)
-  const correctSet = new Set(correctWords)
-
-  const missing = correctWords.filter(w => !attemptSet.has(w))
-  const extra = attemptWords.filter(w => !correctSet.has(w))
-  const hasChineseInCorrect = /[\u4e00-\u9fa5]/.test(correctSentence)
-
-  const analysisLines: string[] = []
-
-  if (missing.length === 0 && extra.length === 0) {
-    analysisLines.push(`   - 单词完全匹配，可能标点符号或大小写略有差异。`)
-  }
-
-  if (missing.length > 0) {
-    const uniqueMissing = Array.from(new Set(missing))
-    analysisLines.push(`   - 🔴 **缺少或写错的词**：${uniqueMissing.map(w => `\`${w}\``).join(', ')}`)
-  }
-
-  if (extra.length > 0) {
-    if (hasChineseInCorrect) {
-      analysisLines.push(`   - 💡 **提示**：原句含有未翻译的中文，请确保用英文正确替换了它。`)
-    } else {
-      const uniqueExtra = Array.from(new Set(extra))
-      analysisLines.push(`   - 🟡 **多余或拼错的词**：${uniqueExtra.map(w => `\`${w}\``).join(', ')}`)
-    }
-  }
-
-  const typos: string[] = []
-  for (const ext of extra) {
-    for (const mis of missing) {
-      if (getLevenshteinDistance(ext, mis) <= 2) {
-        typos.push(`   - ✍️ **拼写纠正**：你写的 \`${ext}\` 可能是想写 \`${mis}\`？`)
-      }
-    }
-  }
-  if (typos.length > 0) {
-    analysisLines.push(...typos)
-  }
-
   const diffDisplay = generateWordLevelDiff(userAttempt, correctSentence)
-  analysisLines.unshift(`   - 📊 **改写对比（红/绿差分）**：${diffDisplay}`)
-
-  const steps: string[] = []
-  steps.push(`接近了！让我们来逐项分析你的修改：`)
-  steps.push(`1: **单词与拼写检测**：\n\n${analysisLines.length > 0 ? analysisLines.join('\n') : '   - 拼写与词汇大体正确。'}`)
-  
   const formulaText = getGrammarSkeleton(errorType, correctSentence)
-  steps.push(`2: **正确句子的语法结构公式**：\n\n${formulaText}`)
-  
-  const targetLabel = isTranslationChallenge ? '翻译题目' : '修改原句'
-  const displayText = isTranslationChallenge ? targetText : highlightProblematicParts(targetText, correctSentence)
-  steps.push(`3: **对比信息**：\n\n   - 👉 ${targetLabel}：**"${displayText}"**\n   - 👉 参考语法点：**${typeName}**`)
-  
-  steps.push(`4: **下一步行动**：\n\n   - 请结合第 1 步的词汇提示与第 2 步的语法结构公式，对句子进行修正，然后再次提交吧！`)
 
-  return steps.join('\n\n')
+  const lines: string[] = []
+  lines.push(`接近了，再试一次吧～`)
+  lines.push(`📊 **差分对比**（红删绿增）：${diffDisplay}`)
+  lines.push(`📐 **语法结构**：\n\n${formulaText}`)
+
+  return lines.join('\n\n')
 }
 
 /**
