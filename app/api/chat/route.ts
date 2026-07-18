@@ -1576,6 +1576,24 @@ ${skeleton}
         }
         
         console.log('[Local Review Eval Stage 0]', { Jaccard, wordsAttempt, wordsCorrect, hasChineseInCorrect })
+
+        // 备选正确表达放行：用户答案没有语法错误且与原句不同，即使与参考答案用词不同也通过
+        if (Jaccard < 0.75) {
+          const userDiag = diagnoseEnglishResponse(userMessage, [])
+          const hasNoErrors = !userDiag || userDiag.errorsInResponse.length === 0
+          const wordsOriginal = clean(orig)
+          const setOriginal = new Set(wordsOriginal)
+          let origIntersection = 0
+          for (const w of setAttempt) { if (setOriginal.has(w)) origIntersection++ }
+          const origUnion = new Set([...wordsAttempt, ...wordsOriginal]).size
+          const origJaccard = origUnion === 0 ? 0 : (origIntersection / origUnion)
+          const substantiallyChanged = origJaccard < 0.7
+
+          if (hasNoErrors && substantiallyChanged) {
+            console.log('[Local Review Eval Stage 0] Alternative correct answer accepted:', { userMessage, Jaccard, origJaccard })
+            Jaccard = 0.8
+          }
+        }
         
         if (Jaccard >= 0.75) {
           isStage0Passed = true
@@ -2299,7 +2317,7 @@ You must output exactly a JSON object in this format (or {"errors": []} if no er
     {
       "errorType": "grammar-tense" | "grammar-preposition" | "grammar-article" | "grammar-agreement" | "vocabulary-choice" | "expression-chinglish",
       "originalText": "the bad word/phrase",
-      "correctedText": "the corrected word/phrase",
+      "correctedText": "the FULL corrected sentence — a complete standalone English sentence with subject AND verb, 100% grammatically correct native-level English, preserving the user's intended meaning",
       "severity": "minor" | "moderate" | "major"
     }
   ]
