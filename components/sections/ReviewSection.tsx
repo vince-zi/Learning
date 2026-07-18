@@ -334,7 +334,7 @@ function ReviewModal({ record, userId, onClose, onComplete }: { record: any, use
   return (
     <div
       style={{
-        position: "fixed",
+        position: "absolute",
         inset: 0,
         background: "#00000070",
         display: "flex",
