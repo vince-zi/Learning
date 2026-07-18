@@ -178,17 +178,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // --- 0. 每日额度检查（在调用 DeepSeek API 之前）---
     const effectiveUserId = userId || `anon_${uuidv4()}`
-    const quota = await checkQuota(effectiveUserId)
-    if (!quota.allowed) {
-      return NextResponse.json({
-        error: 'daily_quota_exceeded',
-        message: `你今天已用完 ${quota.limit} 条消息的免费额度，明天自动重置。`,
-        limit: quota.limit,
-        remaining: 0,
-      }, { status: 429 })
-    }
 
     // --- 1. 获取会话信息与对话历史 ---
     const supabase = getServerClient()
@@ -287,7 +277,20 @@ export async function POST(request: Request) {
     const isReviewMode = isEnglish && (sessionTheme === '全局温习' || sessionTheme.startsWith('温习: '))
     const isPracticeMode = isEnglish && (sessionTheme === '全局针对训练' || sessionTheme.startsWith('针对训练: '))
 
-    // 1.1 查询用户在全局或该节点下的历史“发现卡片”和“错题记录” (仅英语温习/特训可用)
+    // --- 0. 每日额度检查（温习模式为本地评测，不调用 LLM，跳过额度检查）---
+    if (!isReviewMode) {
+      const quota = await checkQuota(effectiveUserId)
+      if (!quota.allowed) {
+        return NextResponse.json({
+          error: 'daily_quota_exceeded',
+          message: `你今天已用完 ${quota.limit} 条消息的免费额度，明天自动重置。`,
+          limit: quota.limit,
+          remaining: 0,
+        }, { status: 429 })
+      }
+    }
+
+    // 1.1 查询用户在全局或该节点下的历史”发现卡片”和”错题记录” (仅英语温习/特训可用)
     let userContextPrompt = ''
     let showChooseLangHint = false
     let targetErrorToReview: any = null
