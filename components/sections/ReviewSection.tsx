@@ -825,10 +825,10 @@ export function ReviewSection() {
     setIsLoading(true);
     setFetchError(false);
     try {
-    const userId = getUserId();
-    const { data, error: fetchErr } = await supabase.from('error_records').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-    if (fetchErr) throw fetchErr;
-    if (data) {
+      const userId = getUserId();
+      const { data, error: fetchErr } = await supabase.from('error_records').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+      if (fetchErr) throw fetchErr;
+      if (data) {
       // batch-fetch sessions to get context (topic names / theme)
       const sessionIds = [...new Set(data.map(d => d.session_id).filter(Boolean))] as string[];
       let sessionMap: Record<string, any> = {};
@@ -909,8 +909,8 @@ export function ReviewSection() {
         return 0; // 保持原有创建时间降序
       });
       
-      setRecords(sorted);
-    }
+        setRecords(sorted);
+      }
     } catch (err) {
       console.error('fetchRecords error:', err);
       setFetchError(true);
